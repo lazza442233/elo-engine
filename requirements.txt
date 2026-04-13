@@ -1,0 +1,10 @@
+# Core
+scipy==1.17.1
+streamlit==1.56.0
+
+# Used directly by dashboard
+altair==6.0.0
+pandas==3.0.2
+
+# Testing
+pytest==9.0.2

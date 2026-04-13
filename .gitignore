@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# AI tool configs
+.claude/
+.copilot/
+.cursor/
+.aider*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific: runtime artifacts (not source)
+data/elo_engine.db
+data/calibration_log.csv

@@ -1,0 +1,58 @@
+{
+  "2022": {
+    "first_grade": {
+      "season": "PLBdD94mb7",
+      "competition": "R3NP1JgKr4",
+      "league": "7MNGbkXmAz",
+      "tenant": "PLBdD94mb7"
+    },
+    "reserve_grade": {
+      "season": "PLBdD94mb7",
+      "competition": "R3NP1JgKr4",
+      "league": "V8dnjo8dwL",
+      "tenant": "PLBdD94mb7"
+    }
+  },
+  "2023": {
+    "first_grade": {
+      "season": "yvdWDEnmO0",
+      "competition": "jJmX5w4Nno",
+      "league": "b8Nq3Pkgd9",
+      "tenant": "PLBdD94mb7"
+    },
+    "reserve_grade": {
+      "season": "yvdWDEnmO0",
+      "competition": "jJmX5w4Nno",
+      "league": "OEN220LZNq",
+      "tenant": "PLBdD94mb7"
+    }
+  },
+  "2024": {
+    "first_grade": {
+      "season": "BjmazWqNRq",
+      "competition": "Rxm8E2LNrX",
+      "league": "kemAygXqmB",
+      "tenant": "PLBdD94mb7"
+    },
+    "reserve_grade": {
+      "season": "BjmazWqNRq",
+      "competition": "Rxm8E2LNrX",
+      "league": "njdypZgvK5",
+      "tenant": "PLBdD94mb7"
+    }
+  },
+  "2025": {
+    "first_grade": {
+      "season": "AnmYPJDdzG",
+      "competition": "kemAqObmB7",
+      "league": "8BdVAjM9KE",
+      "tenant": "PLBdD94mb7"
+    },
+    "reserve_grade": {
+      "season": "AnmYPJDdzG",
+      "competition": "kemAqObmB7",
+      "league": "7ZKR8j1Amk",
+      "tenant": "PLBdD94mb7"
+    }
+  }
+}
