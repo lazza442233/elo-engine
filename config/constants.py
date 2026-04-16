@@ -7,11 +7,11 @@ Constants and configuration for the Grassroots Elo Engine.
 # ---------------------------------------------------------------------------
 BASE_ELO = 1500
 K_FACTOR_INITIAL = 40       # K for teams with < K_TRANSITION_GAMES played
-K_FACTOR_SETTLED = 30       # K for teams with >= K_TRANSITION_GAMES played (D1 optimized)
+K_FACTOR_SETTLED = 35       # K for teams with >= K_TRANSITION_GAMES played (D1 optimized)
 K_TRANSITION_GAMES = 10     # games threshold for K decay
 HOME_FIELD_ADVANTAGE = 50   # pts — empirically optimized via D1 grid search
 MOV_C1 = 0.001              # asymmetric MoV dampener: MoV / (|elo_diff| * C1 + C2)
-MOV_C2 = 3.0                # baseline dampening denominator
+MOV_C2 = 2.0                # baseline dampening denominator
 LEAGUE_AVG_GOALS = 7.0      # total goals per game (derived from match data)
 
 # ---------------------------------------------------------------------------

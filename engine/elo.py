@@ -169,6 +169,15 @@ class GrassrootsEloEngine:
         if not quiet:
             print(f"[Priors] Injected {len(priors)} team rating(s).")
 
+    def reset_played(self):
+        """Reset games-played counters for all teams (preserves Elo and rates).
+
+        Call between seasons so the K-factor transition (K_INITIAL → K_SETTLED)
+        applies fresh each year.
+        """
+        for team in self.teams.values():
+            team.played = 0
+
     # ------------------------------------------------------------------ #
     # Process a single match                                               #
     # ------------------------------------------------------------------ #

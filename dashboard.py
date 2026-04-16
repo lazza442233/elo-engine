@@ -25,6 +25,8 @@ st.markdown("""<style>
 /* Hide Streamlit deploy button & decoration, keep sidebar toggle */
 [data-testid="stToolbar"] [data-testid="stToolbarActions"] > div:has([data-testid="stBaseButton-header"]) { display: none !important; }
 [data-testid="stDecoration"] { display: none !important; }
+/* Tighten default block-container padding */
+.block-container { padding-top: 2rem !important; padding-bottom: 1rem !important; }
 /* Mobile: tighten main content padding */
 @media (max-width: 640px) {
     .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -48,7 +50,7 @@ except Exception as exc:
 
 # Engine
 history, team_names, engine = build_engine(
-    league_key, raw_matches, use_priors=sidebar_cfg["use_priors"],
+    league_key, raw_matches, use_priors=True,
 )
 state = compute_league_state(engine)
 

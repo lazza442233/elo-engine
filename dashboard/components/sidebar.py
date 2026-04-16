@@ -4,18 +4,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from config.constants import BASE_ELO, DEFAULT_LEAGUE, LEAGUES
-
-_PRIORS_PATHS = {
-    "prem-men": "data/end_of_season_elos_first_grade.json",
-    "prem-res": "data/end_of_season_elos_reserve_grade.json",
-}
+from config.constants import DEFAULT_LEAGUE, LEAGUES
 
 
 def render_sidebar() -> dict:
     """Render the sidebar and return user selections.
 
-    Returns a dict with keys: league_key, use_priors.
+    Returns a dict with keys: league_key.
     """
     st.sidebar.markdown(
         '<div style="padding:8px 0 4px">'
@@ -35,84 +30,75 @@ def render_sidebar() -> dict:
 
     _PILL_LABELS = {k: cfg["name"].replace("Premier League ", "") for k, cfg in LEAGUES.items()}
     _LABEL_TO_KEY = {v: k for k, v in _PILL_LABELS.items()}
+    _default = _PILL_LABELS[DEFAULT_LEAGUE]
+
+    def _enforce_selection():
+        if st.session_state["league_pills"] is None:
+            st.session_state["league_pills"] = _default
+
     league_label = st.sidebar.pills(
         "League",
         options=list(_PILL_LABELS.values()),
-        default=_PILL_LABELS[DEFAULT_LEAGUE],
+        default=_default,
         key="league_pills",
+        on_change=_enforce_selection,
     )
     if league_label is None:
-        st.session_state["league_pills"] = _PILL_LABELS[DEFAULT_LEAGUE]
-        st.rerun()
+        league_label = _default
     league_key = _LABEL_TO_KEY[league_label]
-
-    st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
-
-    from pathlib import Path
-    priors_path = _PRIORS_PATHS.get(league_key, _PRIORS_PATHS["prem-men"])
-    priors_available = Path(priors_path).exists()
-
-    st.sidebar.markdown(
-        '<p style="font-size:0.72rem; color:#64748b; text-transform:uppercase; '
-        'letter-spacing:0.6px; font-weight:600; margin-bottom:4px">Season Priors</p>',
-        unsafe_allow_html=True,
-    )
-    use_priors = st.sidebar.toggle(
-        "Carry forward ratings",
-        value=priors_available,
-        disabled=not priors_available,
-        help="Seed team ratings from last season's end-of-season Elo (regressed 20% toward 1500). "
-             "Improves early-season accuracy." if priors_available
-             else "No priors file found. Run `python main.py --export-ratings` at end of season.",
-    )
 
     st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
     with st.sidebar.expander("How it works"):
         st.markdown(
-            "Ratings update after every match. The size of the rating "
-            "change is determined by the match result, the margin of "
-            "victory, and the pre-match odds.\n\n"
+            "Every team has an **Elo rating** — a single number that "
+            "represents how strong they are right now. When a team "
+            "wins, their rating goes up and the loser's goes down. "
+            "A bigger win means a bigger change.\n\n"
+            "Beating a strong team is worth more than beating a weak "
+            "one, and the home side gets a small boost because home "
+            "advantage is real in this league.\n\n"
+            "At the start of a new season, ratings carry over from "
+            "last year (with a small pull back toward average to "
+            "account for player movement). New clubs to the "
+            "competition start with a rating based on their expected "
+            "level.\n\n"
+            "**Predictions** use each team's rating — and their "
+            "attacking and defensive record — to estimate the most "
+            "likely scoreline and win probability for every upcoming "
+            "match.\n\n"
+            "*Ratings are provisional for the first ~10 rounds while "
+            "the system finds its feet.*",
+        )
+
+    with st.sidebar.expander("Technical details"):
+        st.markdown(
             "All parameters have been **empirically optimized** "
             "against four seasons of historical data (2022–2025) using "
             "a walk-forward grid search with asymmetric MoV dampening "
             "and opponent-adjusted rates. The model achieves a Brier "
             "score of **0.496** on the 2025 holdout season (random "
             "guessing = 0.67).\n\n"
-            "- **Early-Season Calibration**: For a team's first 10 "
-            "games, their rating is intentionally more volatile "
-            "(K-factor 40 → 30). This allows the model to quickly "
-            "find their true strength. Afterwards, ratings stabilise.\n"
-            "- **Home-Field Advantage**: +50 Elo points. Analysis of "
-            "four historical seasons shows a strong home advantage in "
-            "this league — likely due to familiar grounds and local "
-            "supporter presence.\n"
-            "- **Margin of Victory**: A dominant 5-0 victory will "
-            "cause a significantly larger rating shift than a narrow "
-            "1-0 win, with diminishing returns for extreme blowouts. "
-            "Blowouts between mismatched teams are dampened so "
-            "expected results don't over-inflate ratings.\n"
-            "- **Opponent-Adjusted Rates**: Each team's attack and "
-            "defence rates are adjusted for the quality of opponents "
-            "faced, so scoring against a strong defence counts more.\n"
-            "- **Predictive Model**: Match odds are calculated via a "
-            "Skellam distribution using per-team expected goals (xG), "
-            "blended from opponent-adjusted rates and Elo-derived "
-            "expectations. For extreme mismatches, the displayed xG "
-            "is adjusted for realism (marked with ⓘ) while the "
-            "underlying win probability remains the primary predictor.\n"
-            "- **Adaptive League Average**: The league-wide goals "
-            "per game is computed dynamically from processed matches "
-            "rather than using a fixed constant, allowing the model "
-            "to self-correct for changes in league scoring trends.\n"
-            "- **Carry-Forward Ratings**: When enabled, teams retain "
-            "80% of their Elo delta from the previous season, "
-            "accounting for roster turnover while preserving "
-            "established team strength. New entrants to the "
-            "competition are seeded based on their expected level.\n"
-            f"- **Baseline Rating**: Without carry-forward, all "
-            f"teams start at {BASE_ELO}.\n\n"
-            "*Ratings are provisional for the first ~10 rounds while "
-            "the system calibrates.*\n\n"
+            "- **K-factor**: 40 for a team's first 10 games, then 30. "
+            "Allows rapid calibration in early rounds.\n"
+            "- **Home-Field Advantage**: +50 Elo points, derived from "
+            "four seasons of observed home win rates.\n"
+            "- **Margin of Victory**: Asymmetric log dampening — "
+            "large wins shift ratings more, but with diminishing "
+            "returns. Expected blowouts are dampened further so "
+            "mismatches don't over-inflate ratings.\n"
+            "- **Opponent-Adjusted Rates**: Per-team attack and "
+            "defence rates are adjusted for opponent quality. Scoring "
+            "against a strong defence counts more.\n"
+            "- **Skellam Predictions**: Match odds via a Skellam "
+            "distribution using per-team xG blended from "
+            "opponent-adjusted rates and Elo-derived expectations. "
+            "Display xG is inflated for extreme mismatches (marked "
+            "with ⓘ); win probability is the primary predictor.\n"
+            "- **Adaptive League Average**: Goals per game computed "
+            "dynamically from processed matches, not a fixed constant.\n"
+            "- **Carry-Forward**: 80% Elo delta retention across "
+            "seasons (20% regression toward 1500). Newcomers seeded "
+            "at an anchor based on their expected competitive level.\n\n"
             "---\n\n"
             "<small style='color:#94a3b8'>Skellam-Elo Hybrid Model · Data via Dribl API</small>",
             unsafe_allow_html=True,
@@ -120,5 +106,4 @@ def render_sidebar() -> dict:
 
     return {
         "league_key": league_key,
-        "use_priors": use_priors,
     }
