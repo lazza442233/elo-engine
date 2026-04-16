@@ -9,48 +9,75 @@ from config.teams import team_short
 from models.team import Team
 
 
-def _biggest_swing(engine: GrassrootsEloEngine) -> dict | None:
-    """Return details of the match with the largest Elo exchange in the most recent round."""
+def _biggest_swing(engine: GrassrootsEloEngine, target_round: str | None = None) -> dict | None:
+    """Return details of the biggest upset or largest Elo exchange in a given round.
+
+    If *target_round* is supplied (e.g. ``"Round 5"``), only matches from that
+    round are considered.  Otherwise falls back to the most recent round label
+    found in the match log.
+
+    An upset is when the lower-rated team wins. When an upset occurred,
+    that match is returned with ``is_upset=True``. Otherwise falls back to
+    the match with the largest raw Elo exchange.
+    """
     ml = engine.match_log
     hist = engine.elo_history
     if len(ml) < 2 or len(hist) < 2:
         return None
 
-    last_round = ml[-1].get("round")
-    if not last_round:
+    if target_round is None:
+        target_round = ml[-1].get("round")
+    if not target_round:
         return None
 
-    last_round_start = len(ml) - 1
-    while last_round_start > 0 and ml[last_round_start - 1].get("round") == last_round:
-        last_round_start -= 1
-
-    if last_round_start == 0:
+    # Collect indices for matches in the target round
+    round_indices = [i for i, m in enumerate(ml) if m.get("round") == target_round]
+    if not round_indices or round_indices[0] == 0:
         return None
 
+    best_upset_swing = 0.0
+    best_upset: dict | None = None
     best_swing = 0.0
-    best_match = None
-    before = hist[last_round_start - 1]
-    for i in range(last_round_start, len(ml)):
+    best_match: dict | None = None
+
+    for i in round_indices:
+        # Use the snapshot *before* this match as the baseline
+        before = hist[i - 1]
         after_snap = hist[i]
         home, away = ml[i]["home"], ml[i]["away"]
         home_delta = after_snap.get(home, 0) - before.get(home, 0)
         swing = abs(home_delta)
-        if swing > best_swing:
-            best_swing = swing
-            hs, as_ = ml[i]["home_score"], ml[i]["away_score"]
-            best_match = {
-                "home": home, "away": away,
-                "home_score": hs, "away_score": as_,
-                "swing": swing,
-                "winner_delta": home_delta if hs > as_ else -home_delta,
-            }
-        before = {
-            **before,
-            home: after_snap.get(home, before.get(home, 0)),
-            away: after_snap.get(away, before.get(away, 0)),
+        hs, as_ = ml[i]["home_score"], ml[i]["away_score"]
+
+        # Determine pre-match favourite (home gets HFA implicitly in Elo)
+        home_pre = before.get(home, 1500)
+        away_pre = before.get(away, 1500)
+        home_favoured = home_pre >= away_pre
+
+        # Was this an upset? (lower-rated team won)
+        is_upset = False
+        if hs > as_ and not home_favoured:
+            is_upset = True
+        elif as_ > hs and home_favoured:
+            is_upset = True
+
+        match_info = {
+            "home": home, "away": away,
+            "home_score": hs, "away_score": as_,
+            "swing": swing,
+            "is_upset": is_upset,
         }
 
-    return best_match
+        if is_upset and swing > best_upset_swing:
+            best_upset_swing = swing
+            best_upset = match_info
+
+        if swing > best_swing:
+            best_swing = swing
+            best_match = match_info
+
+    # Prefer upset; fall back to biggest swing
+    return best_upset if best_upset else best_match
 
 
 def _closest_upcoming(
@@ -84,13 +111,19 @@ def render_header(
     league_name: str,
 ) -> None:
     """Render the page title and compact stats header bar."""
-    st.title(league_name)
+    st.markdown(
+        f'<h2 style="margin:0 0 4px; font-size:1.4rem; font-weight:700; line-height:1.3">{league_name}</h2>',
+        unsafe_allow_html=True,
+    )
 
     leader = league_table[0] if league_table else None
     total_goals = sum(t.gf for t in league_table)
     avg_gpg = total_goals / max(engine.processed_matches, 1)
 
-    swing = _biggest_swing(engine)
+    # Use the most recently completed full round, not the last-processed match
+    last_completed_round = max(detected_round - 1, 1)
+    swing = _biggest_swing(engine, target_round=f"Round {last_completed_round}")
+    swing_round_label = last_completed_round
     closest = _closest_upcoming(engine, raw_fixtures)
 
     # Inline style tokens
@@ -150,10 +183,18 @@ def render_header(
 </div>'''
 
     if swing:
+        if swing.get("is_upset"):
+            swing_label = f"Shock result Rd {swing_round_label}"
+            swing_sub = f'&plusmn;{swing["swing"]:.0f} Elo exchanged'
+        else:
+            swing_label = f"Biggest swing Rd {swing_round_label}"
+            swing_sub = f'&plusmn;{swing["swing"]:.0f} Elo exchanged'
+        home_short_sw = team_short(swing["home"])
+        away_short_sw = team_short(swing["away"])
         hdr += f'''<div class="hdr-cell hdr-secondary">
-    <span style="{label}">Biggest swing last round</span>
-    <span style="{value}">{swing["home"]} {swing["home_score"]}&ndash;{swing["away_score"]} {swing["away"]}</span>
-    <span style="font-size:0.72rem; color:#64748b">&plusmn;{swing["swing"]:.0f} Elo exchanged</span>
+    <span style="{label}">{swing_label}</span>
+    <span style="{value}"><span class="hdr-name-full">{swing["home"]} {swing["home_score"]}&ndash;{swing["away_score"]} {swing["away"]}</span><span class="hdr-name-short">{home_short_sw} {swing["home_score"]}&ndash;{swing["away_score"]} {away_short_sw}</span></span>
+    <span style="font-size:0.72rem; color:#64748b">{swing_sub}</span>
 </div>'''
 
     hdr += f'''<div class="hdr-cell hdr-secondary">

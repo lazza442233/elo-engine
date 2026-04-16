@@ -12,7 +12,7 @@ from dashboard.components.header import render_header
 from dashboard.components.predictions import render_predictions_tab
 from dashboard.components.rankings import render_rankings_tab
 from dashboard.components.sidebar import render_sidebar
-from dashboard.data import build_engine, compute_league_state, load_data
+from dashboard.data import build_engine, compute_league_state, load_fixtures, load_matches
 
 st.set_page_config(page_title="Elo Engine", page_icon="E", layout="wide")
 
@@ -22,6 +22,9 @@ st.markdown("""<style>
     color: #ffffff !important;
     border-color: #0f172a !important;
 }
+/* Hide Streamlit deploy button & decoration, keep sidebar toggle */
+[data-testid="stToolbar"] [data-testid="stToolbarActions"] > div:has([data-testid="stBaseButton-header"]) { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
 /* Mobile: tighten main content padding */
 @media (max-width: 640px) {
     .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -36,9 +39,8 @@ league_cfg = LEAGUES[league_key]
 
 # Data loading
 try:
-    raw_matches, raw_fixtures, detected_round = load_data(
-        league_key, sidebar_cfg["manual_round"],
-    )
+    raw_matches = load_matches(league_key)
+    raw_fixtures, detected_round = load_fixtures(league_key, round_number=None)
     st.session_state["detected_round"] = detected_round
 except Exception as exc:
     st.error(f"Could not fetch data from Dribl API: {exc}")
@@ -70,7 +72,11 @@ with tab_rank:
     )
 
 with tab_pred:
-    render_predictions_tab(engine=engine, raw_fixtures=raw_fixtures)
+    render_predictions_tab(
+        engine=engine,
+        league_key=league_key,
+        detected_round=detected_round,
+    )
 
 with tab_hist:
     render_elo_history_tab(

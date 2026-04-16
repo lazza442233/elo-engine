@@ -5,7 +5,8 @@ from __future__ import annotations
 import streamlit as st
 
 from dashboard.helpers import closeness_score, confidence_label, parse_fixture_dt
-from config.teams import team_badge_html, team_color, team_short
+from dashboard.data import load_fixtures
+from config.teams import team_badge_html, team_color, team_abbr, team_short
 from engine.elo import GrassrootsEloEngine
 
 # ── Presentation-layer xG override for extreme mismatches ───────────
@@ -45,9 +46,30 @@ def _display_xg(xg_home: float, xg_away: float, prob_home: float, prob_away: flo
 
 def render_predictions_tab(
     engine: GrassrootsEloEngine,
-    raw_fixtures: list[dict],
+    league_key: str,
+    detected_round: int,
 ) -> None:
     """Render prediction cards for upcoming fixtures."""
+
+    # ── Round selector ──────────────────────────────────────────────
+    r_left, r_right = st.columns([1, 3])
+    with r_left:
+        round_number = st.number_input(
+            "Round",
+            min_value=1,
+            max_value=30,
+            value=detected_round,
+            key="predictions_round",
+        )
+    with r_right:
+        st.markdown("")  # vertical spacer to align
+
+    try:
+        raw_fixtures, _ = load_fixtures(league_key, round_number)
+    except Exception:
+        st.error("Could not fetch fixtures for this round.")
+        return
+
     if not raw_fixtures:
         st.info("No upcoming fixtures found.")
         return
@@ -146,15 +168,17 @@ def render_predictions_tab(
         with st.container(border=True):
             home_badge = team_badge_html(home, size=22)
             away_badge = team_badge_html(away, size=22)
+            home_abbr = team_abbr(home)
+            away_abbr = team_abbr(away)
             home_short = team_short(home)
             away_short = team_short(away)
 
-            # Three-zone symmetric layout: Home | Center anchor | Away
             st.markdown(
                 f'''<div class="pred-card" style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:0 12px; margin-bottom:8px">
                 <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px">
                     {home_badge}
-                    <span style="font-size:1.05rem; font-weight:{home_weight}"><span class="pred-name-full">{home}</span><span class="pred-name-short">{home_short}</span></span>
+                    <span class="pred-name-full" style="font-size:1.05rem; font-weight:{home_weight}">{home_short}</span>
+                    <span class="pred-name-short" style="font-size:1.05rem; font-weight:{home_weight}">{home_abbr}</span>
                     <span style="font-size:0.75rem; color:#94a3b8">{home_elo}</span>
                 </div>
                 <div style="display:flex; flex-direction:column; align-items:center; gap:2px">
@@ -163,7 +187,8 @@ def render_predictions_tab(
                 </div>
                 <div style="display:flex; align-items:center; justify-content:flex-start; gap:6px">
                     <span style="font-size:0.75rem; color:#94a3b8">{away_elo}</span>
-                    <span style="font-size:1.05rem; font-weight:{away_weight}"><span class="pred-name-full">{away}</span><span class="pred-name-short">{away_short}</span></span>
+                    <span class="pred-name-full" style="font-size:1.05rem; font-weight:{away_weight}">{away_short}</span>
+                    <span class="pred-name-short" style="font-size:1.05rem; font-weight:{away_weight}">{away_abbr}</span>
                     {away_badge}
                 </div>
             </div>''', unsafe_allow_html=True)

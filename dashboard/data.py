@@ -15,19 +15,21 @@ PRIORS_PATHS = {
 
 
 @st.cache_data(ttl=300, show_spinner="Fetching match data...")
-def load_data(league_key: str, round_number: int | None):
-    """Fetch results and fixtures from the Dribl API."""
+def load_matches(league_key: str):
+    """Fetch completed match results from the Dribl API."""
     api_url = _build_api_url(league_key)
-    raw_matches = fetch_dribl_data(api_url)
+    return fetch_dribl_data(api_url)
 
+
+@st.cache_data(ttl=300, show_spinner="Fetching fixtures...")
+def load_fixtures(league_key: str, round_number: int | None):
+    """Fetch fixtures for a specific round, or auto-detect the next round."""
     if round_number is not None:
         raw_fixtures = fetch_dribl_data(fixtures_url(round_number, league_key))
-        detected_round = round_number
+        return raw_fixtures, round_number
     else:
         detected_round, raw_fixtures = detect_next_round(league_key=league_key)
-
-    return raw_matches, raw_fixtures, detected_round
-
+        return raw_fixtures, detected_round
 
 @st.cache_data(ttl=300, show_spinner="Processing matches...")
 def build_engine(league_key: str, _raw_matches: list, use_priors: bool = False):

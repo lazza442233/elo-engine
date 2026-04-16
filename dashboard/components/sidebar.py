@@ -15,7 +15,7 @@ _PRIORS_PATHS = {
 def render_sidebar() -> dict:
     """Render the sidebar and return user selections.
 
-    Returns a dict with keys: league_key, manual_round, use_priors.
+    Returns a dict with keys: league_key, use_priors.
     """
     st.sidebar.markdown(
         '<div style="padding:8px 0 4px">'
@@ -33,38 +33,18 @@ def render_sidebar() -> dict:
 
     st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
 
-    st.sidebar.markdown(
-        '<p style="font-size:0.72rem; color:#64748b; text-transform:uppercase; '
-        'letter-spacing:0.6px; font-weight:600; margin-bottom:4px">League</p>',
-        unsafe_allow_html=True,
-    )
-    league_key = st.sidebar.selectbox(
+    _PILL_LABELS = {k: cfg["name"].replace("Premier League ", "") for k, cfg in LEAGUES.items()}
+    _LABEL_TO_KEY = {v: k for k, v in _PILL_LABELS.items()}
+    league_label = st.sidebar.pills(
         "League",
-        options=list(LEAGUES.keys()),
-        format_func=lambda k: LEAGUES[k]["name"],
-        index=list(LEAGUES.keys()).index(DEFAULT_LEAGUE),
-        label_visibility="collapsed",
+        options=list(_PILL_LABELS.values()),
+        default=_PILL_LABELS[DEFAULT_LEAGUE],
+        key="league_pills",
     )
-
-    st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
-
-    st.sidebar.markdown(
-        '<p style="font-size:0.72rem; color:#64748b; text-transform:uppercase; '
-        'letter-spacing:0.6px; font-weight:600; margin-bottom:4px">Round</p>',
-        unsafe_allow_html=True,
-    )
-    round_mode = st.sidebar.radio(
-        "Round selection", ["Auto-detect", "Manual"],
-        horizontal=True, label_visibility="collapsed",
-    )
-    manual_round = None
-    if round_mode == "Manual":
-        if "manual_round_input" not in st.session_state:
-            st.session_state["manual_round_input"] = st.session_state.get("detected_round", 1)
-        manual_round = st.sidebar.number_input(
-            "Round number", min_value=1, max_value=30, key="manual_round_input",
-            label_visibility="collapsed",
-        )
+    if league_label is None:
+        st.session_state["league_pills"] = _PILL_LABELS[DEFAULT_LEAGUE]
+        st.rerun()
+    league_key = _LABEL_TO_KEY[league_label]
 
     st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
 
@@ -140,6 +120,5 @@ def render_sidebar() -> dict:
 
     return {
         "league_key": league_key,
-        "manual_round": manual_round,
         "use_priors": use_priors,
     }

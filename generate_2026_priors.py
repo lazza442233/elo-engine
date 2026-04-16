@@ -11,10 +11,9 @@ Every prior has a documented origin:
                     already been regressed at each season boundary they were
                     absent for. One final regression applied for 2025→2026.
   - TRANSFERRED:    New to the district (Castle Hill, Kellyville). Anchored
-                    via historical 1st/2nd place averages, per grade, then
-                    regressed. Assumes they were competitive in their prior
-                    district; the anchor represents "strong newcomer, not
-                    dominant".
+                    via historical 1st place average Elo, per grade, then
+                    regressed. Assumes they were dominant in their prior
+                    district.
   - PROMOTED:       Promoted from a lower division (Gladesville). Starts at
                     BASE_ELO (1500.0) — no information advantage.
 
@@ -53,11 +52,11 @@ OUTPUT_DIR = Path("data")
 NEW_TEAMS = {
     "Castle Hill United Football Club": {
         "origin": "TRANSFERRED",
-        "anchor": "1st",  # strong newcomer, anchored at historical 2nd place
+        "anchor": "1st",  # dominant newcomer, anchored at historical 1st place
     },
     "Kellyville Kolts Soccer Club": {
         "origin": "TRANSFERRED",
-        "anchor": "1st",  # strong newcomer, anchored at historical 2nd place
+        "anchor": "1st",  # dominant newcomer, anchored at historical 1st place
     },
     "Gladesville Ravens SC": {
         "origin": "PROMOTED",
@@ -211,6 +210,18 @@ def generate_priors(
             f"(Δ={prior - BASE_ELO:+6.1f})  [{cfg['origin']}] {anchor_label}"
         )
 
+    # 3. Normalize so average prior == BASE_ELO (Elo conservation)
+    avg_prior = statistics.mean(priors.values())
+    offset = avg_prior - BASE_ELO
+    if abs(offset) > 0.05:  # only normalize if drift is meaningful
+        for name in priors:
+            priors[name] = round(priors[name] - offset, 1)
+        audit_log.append("")
+        audit_log.append(
+            f"  ── Normalization: shifted all priors by {-offset:+.1f} "
+            f"(avg was {avg_prior:.1f}, now {BASE_ELO:.1f})"
+        )
+
     return priors, audit_log, anchors
 
 
@@ -302,9 +313,10 @@ def main():
     print("  Methodology applied:")
     print(f"    • Walk-forward simulation across 2022–2025 with {REGRESSION_FACTOR} regression at each boundary")
     print(f"    • Final 2025→2026 regression: retain {retention:.0%} of delta from {BASE_ELO}")
-    print(f"    • Transferred teams: anchored at historical avg 2nd-place Elo per grade, then regressed")
+    print(f"    • Transferred teams: anchored at historical avg 1st-place Elo per grade, then regressed")
     print(f"    • Promoted teams: start at {BASE_ELO:.0f} (no information advantage)")
     print(f"    • Hiatus teams: carry accumulated (already-regressed) Elo, plus one more regression")
+    print(f"    • Normalization: all priors shifted so league average = {BASE_ELO:.0f} (Elo conservation)")
     print()
     print("  ⚠  Regression factor note:")
     print(f"    Production code (config/constants.py) uses PRIOR_REGRESSION_FACTOR = 0.2 (80% retention).")

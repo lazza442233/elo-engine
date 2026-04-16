@@ -180,6 +180,7 @@ class GrassrootsEloEngine:
         home_score: int,
         away_score: int,
         round_label: str | None = None,
+        match_date: str | None = None,
     ):
         home = self._get_or_create(home_name)
         away = self._get_or_create(away_name)
@@ -252,6 +253,7 @@ class GrassrootsEloEngine:
             "home_score": home_score,
             "away_score": away_score,
             "round": round_label,
+            "date": match_date,
         })
 
     # ------------------------------------------------------------------ #
@@ -302,8 +304,9 @@ class GrassrootsEloEngine:
             away_name = self._shorten_name(attrs["away_team_name"])
 
             round_label = attrs.get("full_round")
+            match_date = attrs.get("date")
             self.process_match(home_name, away_name, int(home_score), int(away_score),
-                               round_label=round_label)
+                               round_label=round_label, match_date=match_date)
 
         if skipped and not quiet:
             print(f"[Ingest] Skipped {skipped} match(es) (bye/forfeit/invalid).")
