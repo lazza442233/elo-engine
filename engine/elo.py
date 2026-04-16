@@ -14,6 +14,7 @@ Design choices:
 
 import json
 import math
+import statistics
 from datetime import datetime
 from pathlib import Path
 
@@ -429,6 +430,13 @@ class GrassrootsEloEngine:
             regressed[name] = round(
                 BASE_ELO + (team.elo - BASE_ELO) * (1 - PRIOR_REGRESSION_FACTOR), 1
             )
+
+        # Normalize so pool average == BASE_ELO (Elo conservation)
+        avg_elo = statistics.mean(regressed.values())
+        offset = avg_elo - BASE_ELO
+        if abs(offset) > 0.05:
+            regressed = {k: round(v - offset, 1) for k, v in regressed.items()}
+            print(f"[Export] Normalization: shifted all ratings by {-offset:+.1f}")
 
         out.write_text(json.dumps(regressed, indent=2))
         print(f"[Export] Wrote {len(regressed)} regressed ratings to {out}")

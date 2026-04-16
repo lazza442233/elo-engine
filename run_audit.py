@@ -99,6 +99,13 @@ def run_backtest(matches_by_season: dict[str, list[dict]]) -> dict[str, list[dic
         for team in engine.teams.values():
             team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - PRIOR_REGRESSION_FACTOR)
 
+        # Normalize so pool average == BASE_ELO (Elo conservation)
+        avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+        offset = avg_elo - BASE_ELO
+        if abs(offset) > 0.05:
+            for team in engine.teams.values():
+                team.elo -= offset
+
     return season_logs
 
 

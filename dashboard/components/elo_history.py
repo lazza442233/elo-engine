@@ -220,15 +220,24 @@ def _compute_movement(
     if x_mode == "date":
         for team in elo_ranked:
             team_df = df[df["Team"] == team.name]
-            if "Context" in team_df.columns:
-                team_df = team_df[~team_df["Context"].isin(("Season start", "Current"))]
-            team_df = team_df.sort_values("Date")
-            if len(team_df) <= 1:
+            start_row = team_df[team_df["Context"] == "Season start"]
+            season_start_elo = (
+                float(start_row.iloc[0]["Elo"]) if not start_row.empty
+                else float(BASE_ELO)
+            )
+            match_df = team_df[~team_df["Context"].isin(("Season start", "Current"))]
+            match_df = match_df.sort_values("Date")
+            if match_df.empty:
                 movement.append({"team": team.name, "current": team.elo, "delta": 0.0})
                 continue
 
-            lookback_idx = max(0, len(team_df) - 1 - window)
-            base_elo = float(team_df.iloc[lookback_idx]["Elo"])
+            n = len(match_df)
+            if n <= window:
+                # Window reaches back to season start — use pre-season Elo
+                base_elo = season_start_elo
+            else:
+                # Elo after the match just before the window
+                base_elo = float(match_df.iloc[n - window - 1]["Elo"])
             movement.append(
                 {
                     "team": team.name,

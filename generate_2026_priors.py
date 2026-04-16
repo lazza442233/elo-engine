@@ -124,6 +124,13 @@ def run_walk_forward(by_season: dict[str, list[dict]]) -> tuple[dict, list[dict]
             for team in engine.teams.values():
                 team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - REGRESSION_FACTOR)
 
+            # Normalize so pool average == BASE_ELO (Elo conservation)
+            avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+            offset = avg_elo - BASE_ELO
+            if abs(offset) > 0.05:
+                for team in engine.teams.values():
+                    team.elo -= offset
+
     # Capture raw end-of-final-season Elos
     raw_elos = {t.name: t.elo for t in engine.teams.values()}
     return raw_elos, season_top2
