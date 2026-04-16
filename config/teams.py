@@ -95,6 +95,48 @@ TEAMS = {
         "secondary": "#FFFFFF",
         "badge": "assets/badges/west_ryde.png",
     },
+    "Hills Hawks FC": {
+        "short": "Hills Hawks",
+        "abbr": "HHK",
+        "primary": "#E65100",
+        "secondary": "#FFFFFF",
+        "badge": "",
+    },
+    "North Epping Rangers FC": {
+        "short": "Nth Epping",
+        "abbr": "NER",
+        "primary": "#558B2F",
+        "secondary": "#FFFFFF",
+        "badge": "",
+    },
+    "St Patrick's FC": {
+        "short": "St Patrick's",
+        "abbr": "STP",
+        "primary": "#2E7D32",
+        "secondary": "#FFFFFF",
+        "badge": "",
+    },
+    "North Ryde SC": {
+        "short": "North Ryde",
+        "abbr": "NRS",
+        "primary": "#B71C1C",
+        "secondary": "#FFFFFF",
+        "badge": "",
+    },
+    "Normanhurst Eagles FC": {
+        "short": "Normanhurst",
+        "abbr": "NRM",
+        "primary": "#6A1B9A",
+        "secondary": "#FFD600",
+        "badge": "",
+    },
+    "Ryde Saints United FC": {
+        "short": "Ryde Saints",
+        "abbr": "RSU",
+        "primary": "#00695C",
+        "secondary": "#FFFFFF",
+        "badge": "",
+    },
 }
 
 

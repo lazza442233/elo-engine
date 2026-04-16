@@ -23,6 +23,7 @@ from config.constants import (
 )
 from engine.calibration import compute_brier_score, log_prediction
 from engine.elo import GrassrootsEloEngine
+from models.team import Team
 
 
 @pytest.fixture
@@ -188,6 +189,39 @@ class TestEloConservation:
 
         total_after = sum(t.elo for t in engine.teams.values())
         assert total_after == pytest.approx(total_before)
+
+
+# ------------------------------------------------------------------ #
+# Team.league_avg_goals isolation                                      #
+# ------------------------------------------------------------------ #
+
+class TestTeamLeagueAvgGoals:
+    def test_new_team_has_league_avg_goals(self):
+        t = Team("Test")
+        assert hasattr(t, "league_avg_goals")
+        assert t.league_avg_goals > 0
+
+    def test_deserialized_team_falls_back_to_class_default(self):
+        """Simulate a cached/deserialized Team missing the instance attr."""
+        t = Team("Cached")
+        del t.__dict__["league_avg_goals"]  # remove instance attr
+        # Should fall back to class-level default without AttributeError
+        assert t.league_avg_goals > 0
+
+    def test_engine_instances_dont_share_league_avg(self):
+        """Two engines must not bleed league_avg_goals across Team objects."""
+        e1 = GrassrootsEloEngine()
+        e2 = GrassrootsEloEngine()
+        e1.process_match("A", "B", 5, 0)
+        e2._get_or_create("C")
+        # Team C (engine 2) should still have the default, not engine 1's adaptive value
+        from config.constants import LEAGUE_AVG_GOALS
+        assert e2.teams["C"].league_avg_goals == LEAGUE_AVG_GOALS
+
+    def test_adj_rates_work_on_fresh_team(self, engine):
+        """predict_match on never-seen teams must not raise AttributeError."""
+        pred = engine.predict_match("NewHome", "NewAway")
+        assert pred["home_win"] + pred["draw"] + pred["away_win"] == pytest.approx(1.0, abs=0.01)
 
 
 # ------------------------------------------------------------------ #

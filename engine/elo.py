@@ -217,6 +217,13 @@ class GrassrootsEloEngine:
         # Adaptive K — average of both teams' K-factors
         k = (self.k_factor(home.played) + self.k_factor(away.played)) / 2.0
 
+        # Capture opponent rates BEFORE updating stats (avoid current-match feedback)
+        _half = self.league_avg_goals / 2.0
+        _away_def = away.defence_rate if away.played > 0 else _half
+        _away_att = away.attack_rate if away.played > 0 else _half
+        _home_def = home.defence_rate if home.played > 0 else _half
+        _home_att = home.attack_rate if home.played > 0 else _half
+
         # Elo update
         delta = k * mult * (s_home - e_home)
         home.elo += delta
@@ -240,18 +247,19 @@ class GrassrootsEloEngine:
             home.draws += 1
             away.draws += 1
 
-        # Opponent-quality tracking for adjusted rates
-        half = self.league_avg_goals / 2.0
-        home.opp_def_sum += away.defence_rate if away.played > 1 else half
-        home.opp_att_sum += away.attack_rate if away.played > 1 else half
-        away.opp_def_sum += home.defence_rate if home.played > 1 else half
-        away.opp_att_sum += home.attack_rate if home.played > 1 else half
+        # Opponent-quality tracking (using pre-match rates)
+        home.opp_def_sum += _away_def
+        home.opp_att_sum += _away_att
+        away.opp_def_sum += _home_def
+        away.opp_att_sum += _home_att
 
         self.processed_matches += 1
         self._total_goals += home_score + away_score
 
-        # Propagate adaptive league average to Team class
-        Team.league_avg_goals = self.league_avg_goals
+        # Propagate adaptive league average to all team instances
+        avg = self.league_avg_goals
+        for t in self.teams.values():
+            t.league_avg_goals = avg
 
         # Record Elo snapshot for history tracking
         self.elo_history.append({name: t.elo for name, t in self.teams.items()})
@@ -432,11 +440,12 @@ class GrassrootsEloEngine:
             )
 
         # Normalize so pool average == BASE_ELO (Elo conservation)
-        avg_elo = statistics.mean(regressed.values())
-        offset = avg_elo - BASE_ELO
-        if abs(offset) > 0.05:
-            regressed = {k: round(v - offset, 1) for k, v in regressed.items()}
-            print(f"[Export] Normalization: shifted all ratings by {-offset:+.1f}")
+        if len(regressed) > 1:
+            avg_elo = statistics.mean(regressed.values())
+            offset = avg_elo - BASE_ELO
+            if abs(offset) > 0.05:
+                regressed = {k: round(v - offset, 1) for k, v in regressed.items()}
+                print(f"[Export] Normalization: shifted all ratings by {-offset:+.1f}")
 
         out.write_text(json.dumps(regressed, indent=2))
         print(f"[Export] Wrote {len(regressed)} regressed ratings to {out}")
