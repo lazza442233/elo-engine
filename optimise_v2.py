@@ -74,6 +74,7 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
     elo_mod.MOV_C2 = params["MOV_C2"]
     elo_mod.ELO_TO_GOAL_RATIO = params["ELO_TO_GOAL_RATIO"]
     elo_mod.XG_ASYMMETRY_FACTOR = params["XG_ASYMMETRY_FACTOR"]
+    elo_mod.XG_BLEND_WEIGHT = params["XG_BLEND_WEIGHT"]
     elo_mod.MIN_XG = params["MIN_XG"]
     elo_mod.PRIOR_REGRESSION_FACTOR = params["PRIOR_REGRESSION_FACTOR"]
 
@@ -100,12 +101,26 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
             if i < len(train_seasons) - 1:
                 for team in engine.teams.values():
                     team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - regression)
+                # Elo conservation: re-center pool at BASE_ELO (matches production)
+                if engine.teams:
+                    avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+                    offset = avg_elo - BASE_ELO
+                    if abs(offset) > 0.05:
+                        for team in engine.teams.values():
+                            team.elo -= offset
                 if reset_played:
                     engine.reset_played()
 
         # Regress before validation season
         for team in engine.teams.values():
             team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - regression)
+        # Elo conservation: re-center pool at BASE_ELO (matches production)
+        if engine.teams:
+            avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+            offset = avg_elo - BASE_ELO
+            if abs(offset) > 0.05:
+                for team in engine.teams.values():
+                    team.elo -= offset
         if reset_played:
             engine.reset_played()
 
@@ -149,10 +164,13 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
             "brier": brier, "logloss": ll, "accuracy": acc, "n": len(preds)
         }
 
-    # Compute means
-    briers = [v["brier"] for v in fold_results.values()]
-    losses = [v["logloss"] for v in fold_results.values()]
-    accs = [v["accuracy"] for v in fold_results.values()]
+    # Compute means — F1 is diagnostic only (93 training matches, too few for
+    # 11 parameters).  Optimisation objective uses F2+F3 only.
+    # F1 values are preserved in per-fold columns for inspection.
+    opt_folds = [fn for fn in fold_results if fn != "F1"]
+    briers = [fold_results[fn]["brier"] for fn in opt_folds]
+    losses = [fold_results[fn]["logloss"] for fn in opt_folds]
+    accs = [fold_results[fn]["accuracy"] for fn in opt_folds]
 
     result = {**params}
     for fname, fdata in fold_results.items():
@@ -225,6 +243,7 @@ PARAM_SPACE = {
     "RESET_PLAYED_PER_SEASON": [True, False],
     "ELO_TO_GOAL_RATIO":       [50, 75, 100, 125],
     "XG_ASYMMETRY_FACTOR":     [0.5, 0.65, 0.75, 0.85, 1.0],
+    "XG_BLEND_WEIGHT":         [0.2, 0.35, 0.5, 0.65, 0.8],
     "MIN_XG":                  [0.1, 0.2, 0.3],
 }
 
@@ -267,11 +286,12 @@ def run_stage1(grade: str, n_samples: int = 2000, workers: int | None = None):
 
     # Also include the current production config
     production = {
-        "K_FACTOR_INITIAL": 40, "K_FACTOR_SETTLED": 30,
-        "K_TRANSITION_GAMES": 10, "HOME_FIELD_ADVANTAGE": 50,
-        "MOV_C1": 0.001, "MOV_C2": 3.0,
-        "PRIOR_REGRESSION_FACTOR": 0.2, "RESET_PLAYED_PER_SEASON": False,
-        "ELO_TO_GOAL_RATIO": 75, "XG_ASYMMETRY_FACTOR": 0.75, "MIN_XG": 0.2,
+        "K_FACTOR_INITIAL": 30, "K_FACTOR_SETTLED": 35,
+        "K_TRANSITION_GAMES": 10, "HOME_FIELD_ADVANTAGE": 30,
+        "MOV_C1": 0.001, "MOV_C2": 2.0,
+        "PRIOR_REGRESSION_FACTOR": 0.4, "RESET_PLAYED_PER_SEASON": False,
+        "ELO_TO_GOAL_RATIO": 75, "XG_ASYMMETRY_FACTOR": 0.85,
+        "XG_BLEND_WEIGHT": 0.5, "MIN_XG": 0.2,
     }
     samples.insert(0, production)  # First row = baseline
 
@@ -492,11 +512,12 @@ def run_stage3(grade: str):
 
     # Production baseline
     production = {
-        "K_FACTOR_INITIAL": 40, "K_FACTOR_SETTLED": 30,
-        "K_TRANSITION_GAMES": 10, "HOME_FIELD_ADVANTAGE": 50,
-        "MOV_C1": 0.001, "MOV_C2": 3.0,
-        "PRIOR_REGRESSION_FACTOR": 0.2, "RESET_PLAYED_PER_SEASON": False,
-        "ELO_TO_GOAL_RATIO": 75, "XG_ASYMMETRY_FACTOR": 0.75, "MIN_XG": 0.2,
+        "K_FACTOR_INITIAL": 30, "K_FACTOR_SETTLED": 35,
+        "K_TRANSITION_GAMES": 10, "HOME_FIELD_ADVANTAGE": 30,
+        "MOV_C1": 0.001, "MOV_C2": 2.0,
+        "PRIOR_REGRESSION_FACTOR": 0.4, "RESET_PLAYED_PER_SEASON": False,
+        "ELO_TO_GOAL_RATIO": 75, "XG_ASYMMETRY_FACTOR": 0.85,
+        "XG_BLEND_WEIGHT": 0.5, "MIN_XG": 0.2,
     }
 
     print(f"[Stage 3] Champion config:")
@@ -551,6 +572,7 @@ def run_stage3(grade: str):
         elo_mod.MOV_C2 = config["MOV_C2"]
         elo_mod.ELO_TO_GOAL_RATIO = config["ELO_TO_GOAL_RATIO"]
         elo_mod.XG_ASYMMETRY_FACTOR = config["XG_ASYMMETRY_FACTOR"]
+        elo_mod.XG_BLEND_WEIGHT = config["XG_BLEND_WEIGHT"]
         elo_mod.MIN_XG = config["MIN_XG"]
         elo_mod.PRIOR_REGRESSION_FACTOR = config["PRIOR_REGRESSION_FACTOR"]
         regression = config["PRIOR_REGRESSION_FACTOR"]
@@ -570,11 +592,23 @@ def run_stage3(grade: str):
                 if i < len(fold["train"]) - 1:
                     for team in engine.teams.values():
                         team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - regression)
+                    if engine.teams:
+                        avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+                        offset = avg_elo - BASE_ELO
+                        if abs(offset) > 0.05:
+                            for team in engine.teams.values():
+                                team.elo -= offset
                     if reset_played:
                         engine.reset_played()
 
             for team in engine.teams.values():
                 team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - regression)
+            if engine.teams:
+                avg_elo = sum(t.elo for t in engine.teams.values()) / len(engine.teams)
+                offset = avg_elo - BASE_ELO
+                if abs(offset) > 0.05:
+                    for team in engine.teams.values():
+                        team.elo -= offset
             if reset_played:
                 engine.reset_played()
 

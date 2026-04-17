@@ -34,6 +34,7 @@ from config.constants import (
     PRIOR_REGRESSION_FACTOR,
     SKELLAM_TAIL_RANGE,
     XG_ASYMMETRY_FACTOR,
+    XG_BLEND_WEIGHT,
 )
 from models.team import Team
 
@@ -135,15 +136,20 @@ class GrassrootsEloEngine:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def mov_multiplier(goal_diff: int) -> float:
+    def mov_multiplier(goal_diff: int, total_goals: int = 0) -> float:
         """
         Uncapped logarithmic MoV multiplier.
           - goal_diff is the raw score difference.
+          - total_goals: for draws (goal_diff=0), a high-scoring draw
+            carries more information than a 0-0.  A mild ln(total+1) boost
+            differentiates them without overshadowing the dampening term.
           - No hard cap: massive grassroots blowouts (e.g. 15-0) are
             allowed to influence Elo via diminishing log returns.
         """
         effective_gd = abs(goal_diff)
         if effective_gd <= 1:
+            if goal_diff == 0 and total_goals > 0:
+                return 1.0 + 0.1 * math.log(total_goals + 1)
             return 1.0
         return math.log(effective_gd + 1)
 
@@ -210,7 +216,8 @@ class GrassrootsEloEngine:
 
         # MoV multiplier with autocorrelation dampening
         # Dampens MoV bonus when the Elo gap already predicted the blowout
-        raw_mult = self.mov_multiplier(home_score - away_score)
+        raw_mult = self.mov_multiplier(home_score - away_score,
+                                       total_goals=home_score + away_score)
         elo_diff = abs(elo_home_adj - away.elo)
         mult = raw_mult / (elo_diff * MOV_C1 + MOV_C2)
 
@@ -368,8 +375,9 @@ class GrassrootsEloEngine:
         league_avg_half = self.league_avg_goals / 2.0
         elo_home_xg = league_avg_half + (expected_gd * XG_ASYMMETRY_FACTOR)
         elo_away_xg = league_avg_half - (expected_gd * XG_ASYMMETRY_FACTOR)
-        mu_home = max(MIN_XG, (raw_home_xg + elo_home_xg) / 2.0)
-        mu_away = max(MIN_XG, (raw_away_xg + elo_away_xg) / 2.0)
+        w = XG_BLEND_WEIGHT  # 0 = pure Elo, 1 = pure opponent-adjusted
+        mu_home = max(MIN_XG, w * raw_home_xg + (1 - w) * elo_home_xg)
+        mu_away = max(MIN_XG, w * raw_away_xg + (1 - w) * elo_away_xg)
 
         # Step 4: Skellam pmf with wide tails for grassroots blowouts
         p_home_win = sum(

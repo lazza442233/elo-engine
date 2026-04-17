@@ -19,11 +19,8 @@ Every prior has a documented origin:
 
 Regression factor
 -----------------
-The D1 grid search (backtest_logs/d1_grid_results.csv) validated a retention
-rate of 0.8 (REGRESSION_FACTOR column), which corresponds to:
-    PRIOR_REGRESSION_FACTOR = 0.2  →  retention = 1 - 0.2 = 0.8 (80%)
-
-This matches config/constants.py. To override, change REGRESSION_FACTOR below.
+The v2 optimiser validated a retention rate of 0.6 (PRIOR_REGRESSION_FACTOR=0.4),
+which is imported from config/constants.py automatically.
 
 Usage:  python generate_2026_priors.py
 """
@@ -34,15 +31,15 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
-from config.constants import BASE_ELO
+from config.constants import BASE_ELO, PRIOR_REGRESSION_FACTOR
 from engine.elo import GrassrootsEloEngine
 
 # ──────────────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────────────
 
-# Validated regression factor (retain 80% of delta). Change here to override.
-REGRESSION_FACTOR = 0.2   # 1 - REGRESSION_FACTOR = retention rate
+# Use the production regression factor from config/constants.py.
+REGRESSION_FACTOR = PRIOR_REGRESSION_FACTOR
 
 DATA_PATH = Path("data/processed/all_seasons.csv")
 OUTPUT_DIR = Path("data")
@@ -326,8 +323,7 @@ def main():
     print(f"    • Normalization: all priors shifted so league average = {BASE_ELO:.0f} (Elo conservation)")
     print()
     print("  ⚠  Regression factor note:")
-    print(f"    Production code (config/constants.py) uses PRIOR_REGRESSION_FACTOR = 0.2 (80% retention).")
-    print(f"    D1 grid search validated retention=0.8 as optimal (REGRESSION_FACTOR column).")
+    print(f"    Production code (config/constants.py) uses PRIOR_REGRESSION_FACTOR = {PRIOR_REGRESSION_FACTOR} ({1 - PRIOR_REGRESSION_FACTOR:.0%} retention).")
     print(f"    This script used REGRESSION_FACTOR = {REGRESSION_FACTOR} ({retention:.0%} retention).")
     if REGRESSION_FACTOR != 0.2:
         print(f"    ⚠ This differs from the validated value. Review before committing.")
