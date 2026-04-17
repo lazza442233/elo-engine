@@ -21,7 +21,7 @@ TEAMS = {
     "Eastwood St Andrews FC": {
         "short": "Eastwood",
         "abbr": "STA",
-        "primary": "#0057B8",
+        "primary": "#4A90D9",
         "secondary": "#FFD700",
         "badge": "assets/badges/eastwood_sa.png",
     },
@@ -35,7 +35,7 @@ TEAMS = {
     "Epping FC": {
         "short": "Epping",
         "abbr": "EPP",
-        "primary": "#2B4CC4",
+        "primary": "#7B61FF",
         "secondary": "#FFFFFF",
         "badge": "assets/badges/epping.png",
     },
@@ -56,14 +56,14 @@ TEAMS = {
     "Kellyville Kolts Soccer Club": {
         "short": "Kellyville Kolts",
         "abbr": "KVK",
-        "primary": "#D50032",
+        "primary": "#FF1744",
         "secondary": "#000000",
         "badge": "assets/badges/kellyville.png",
     },
     "Macquarie Dragons FC": {
         "short": "Macquarie Dragons",
         "abbr": "MAC",
-        "primary": "#C41E3A",
+        "primary": "#E85D75",
         "secondary": "#FFFFFF",
         "badge": "assets/badges/macquarie.png",
     },
@@ -91,7 +91,7 @@ TEAMS = {
     "West Ryde Rovers FC": {
         "short": "West Ryde",
         "abbr": "WRR",
-        "primary": "#1B2240",
+        "primary": "#37474F",
         "secondary": "#FFFFFF",
         "badge": "assets/badges/west_ryde.png",
     },
@@ -112,7 +112,7 @@ TEAMS = {
     "St Patrick's FC": {
         "short": "St Patrick's",
         "abbr": "STP",
-        "primary": "#2E7D32",
+        "primary": "#66BB6A",
         "secondary": "#FFFFFF",
         "badge": "",
     },

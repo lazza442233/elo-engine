@@ -87,4 +87,5 @@ with tab_hist:
         team_names=team_names,
         elo_ranked=state["elo_ranked"],
         league_table=state["league_table"],
+        league_key=league_key,
     )
