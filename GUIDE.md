@@ -2,7 +2,7 @@
 
 A **Skellam-Elo hybrid rating system** built for amateur football. It ingests live match data from the Dribl API, computes Elo ratings for every team, and predicts upcoming match outcomes using a Skellam goal-difference distribution. Every parameter has been empirically optimized against four seasons (2022–2025) of walk-forward validated data.
 
-**Brier Score: 0.496** on the 2025 holdout season (random guessing = 0.667).
+**Brier Score: 0.479** on the 2025 holdout season (random guessing = 0.667).
 
 ---
 
@@ -29,7 +29,7 @@ The dashboard provides an interactive web UI with rankings, predictions for upco
 ### Run the test suite
 
 ```bash
-python3 -m pytest tests/ -v              # 63 tests
+python3 -m pytest tests/ -v              # 67 tests
 ```
 
 ---
@@ -93,7 +93,7 @@ data/
   end_of_season_elos_*.json    Carry-forward priors files
 
 backtest_logs/                 Validation artifacts and audit logs
-tests/test_elo.py              63 unit tests
+tests/test_elo.py              67 unit tests
 ```
 
 ---
@@ -106,9 +106,9 @@ Every team starts at **1500**. After each match, ratings shift based on three fa
 
 1. **Result** — Win, draw, or loss against the expected outcome
 2. **Margin of victory** — Logarithmic scaling (`log(GD + 1)`), with diminishing returns for blowouts. An asymmetric dampener (`MoV / (|Δelo| × C1 + C2)`) reduces the bonus when the Elo gap already predicted the blowout
-3. **Adaptive K-factor** — K=40 for a team's first 10 games (fast convergence), decaying linearly to K=30 once settled
+3. **Adaptive K-factor** — K=30 for a team's first 10 games (fast convergence), ramping linearly to K=35 once settled
 
-**Home-field advantage** adds 50 Elo points to the home team's effective rating. This was empirically optimized from four seasons of data showing a consistent home edge in this league.
+**Home-field advantage** adds 30 Elo points to the home team's effective rating. This was empirically optimized from four seasons of data showing a consistent home edge in this league.
 
 ### Predictions
 
@@ -126,7 +126,7 @@ The league-wide goals per game is **computed dynamically** from processed matche
 
 ### Carry-forward ratings
 
-When enabled (via `--priors` on CLI or the dashboard toggle), teams retain **80% of their Elo delta** from the previous season. This:
+When enabled (via `--priors` on CLI or the dashboard toggle), teams retain **60% of their Elo delta** from the previous season. This:
 - Dramatically improves early-season predictions by starting with informed ratings
 - Naturally decays — each new match result dilutes the prior
 - Automatically filters out teams no longer in the competition
@@ -164,20 +164,20 @@ This writes regressed Elo ratings to `data/end_of_season_elos.json`. Rename this
 
 ## Hyperparameters
 
-All constants live in `config/constants.py`. These have been optimized via a walk-forward grid search (train 2022–2023, validate 2024, holdout 2025).
+All constants live in `config/constants.py`. These have been optimized via a 2,000-sample Latin Hypercube search followed by a refined grid, with 3-fold expanding-window walk-forward validation (train 2022–2023, validate 2024, holdout 2025).
 
 | Parameter | Value | Purpose |
 |---|---|---|
 | `BASE_ELO` | 1500 | Starting rating for all teams |
-| `K_FACTOR_INITIAL` | 40 | K-factor for first 10 games (fast convergence) |
-| `K_FACTOR_SETTLED` | 30 | K-factor after 10 games (stability) |
+| `K_FACTOR_INITIAL` | 30 | K-factor for first 10 games (fast convergence) |
+| `K_FACTOR_SETTLED` | 35 | K-factor after 10 games (stability) |
 | `K_TRANSITION_GAMES` | 10 | Games to transition from initial to settled K |
-| `HOME_FIELD_ADVANTAGE` | 50 | Elo points added for home team |
+| `HOME_FIELD_ADVANTAGE` | 30 | Elo points added for home team |
 | `MOV_C1` | 0.001 | Asymmetric MoV dampener — Elo gap coefficient |
-| `MOV_C2` | 3.0 | Asymmetric MoV dampener — baseline denominator |
+| `MOV_C2` | 2.0 | Asymmetric MoV dampener — baseline denominator |
 | `ELO_TO_GOAL_RATIO` | 75 | Elo points per expected goal difference |
-| `XG_ASYMMETRY_FACTOR` | 0.75 | How aggressively xG splits between home/away |
-| `PRIOR_REGRESSION_FACTOR` | 0.2 | Retain 80% of Elo delta across seasons |
+| `XG_ASYMMETRY_FACTOR` | 0.85 | How aggressively xG splits between home/away |
+| `PRIOR_REGRESSION_FACTOR` | 0.4 | Retain 60% of Elo delta across seasons |
 | `LEAGUE_AVG_GOALS` | 7.0 | Initial seed (overridden adaptively at runtime) |
 | `MIN_XG` | 0.2 | Floor for expected goals |
 | `SKELLAM_TAIL_RANGE` | 20 | Max goal difference evaluated in Skellam PMF |
