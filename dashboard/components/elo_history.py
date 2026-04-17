@@ -122,17 +122,30 @@ def _build_subtitle(df: pd.DataFrame, view_mode: str) -> str:
     best_delta = stats.iloc[0]["delta"]
     worst_delta = stats.iloc[-1]["delta"]
 
-    period = "all-time" if view_mode == "All" else f"the 20{view_mode.replace("'", '')} season"
+    current_year = datetime.now().year
+    is_current = view_mode == f"'{current_year % 100}"
+
+    if is_current:
+        period = "this season"
+        rise_verb, fall_verb = "has risen", "has fallen"
+    elif view_mode == "All":
+        period = "all-time"
+        rise_verb, fall_verb = "rose", "fell"
+    else:
+        period = f"the 20{view_mode.replace("'", '')} season"
+        rise_verb, fall_verb = "rose", "fell"
+
     parts: list[str] =[]
 
     if best_delta > 5:
-        parts.append(f"<b>{team_short(best_team)}</b> rose <b>+{best_delta:.0f}</b>")
+        parts.append(f"<b>{team_short(best_team)}</b> {rise_verb} <b>+{best_delta:.0f}</b>")
     if worst_delta < -5:
-        parts.append(f"<b>{team_short(worst_team)}</b> fell <b>{worst_delta:.0f}</b>")
+        parts.append(f"<b>{team_short(worst_team)}</b> {fall_verb} <b>{worst_delta:.0f}</b>")
 
     if not parts:
         return ""
-    return f"Across {period}, " + " while ".join(parts) + " Elo"
+    prefix = "So far " if is_current else "Across "
+    return f"{prefix}{period}, " + " while ".join(parts) + " Elo"
 
 
 def _extend_lines_to_max(df: pd.DataFrame, label: str = "Season end") -> pd.DataFrame:
