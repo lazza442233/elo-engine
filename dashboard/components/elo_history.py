@@ -45,6 +45,20 @@ def _baseline_elo(team_name: str, initial_elos: dict[str, float]) -> float:
     return round(float(initial_elos.get(team_name, float(BASE_ELO))), 1)
 
 
+def _chip(name: str, value_html: str, bg: str, border: str) -> str:
+    """Render a single styled team chip as an HTML snippet."""
+    c = team_color(name)
+    return (
+        f'<span style="display:inline-flex;align-items:center;gap:5px;'
+        f'background:{bg};border:1px solid {border};border-radius:6px;'
+        f'padding:2px 8px;margin:1px 3px;white-space:nowrap">'
+        f'<span style="width:8px;height:8px;border-radius:50%;background:{c};flex-shrink:0"></span>'
+        f'<span style="font-weight:600;font-size:0.78rem;color:#1e293b">{team_short(name)}</span>'
+        f'<span style="font-size:0.75rem;font-weight:700;{value_html}</span>'
+        f'</span>'
+    )
+
+
 # -----------------------------------------------------------------------------
 # Data Transformation & Stats (Vectorized)
 # -----------------------------------------------------------------------------
@@ -108,7 +122,7 @@ def _build_subtitle(df: pd.DataFrame, view_mode: str) -> str:
     best_delta = stats.iloc[0]["delta"]
     worst_delta = stats.iloc[-1]["delta"]
 
-    period = "all-time" if view_mode == "All" else f"the 20{view_mode.replace(chr(39), '')} season"
+    period = "all-time" if view_mode == "All" else f"the 20{view_mode.replace("'", '')} season"
     parts: list[str] =[]
 
     if best_delta > 5:
@@ -238,21 +252,23 @@ def _compress_offseasons(
         if i < len(ranges) - 1:
             cursor += gap_days
 
-    def _map_date(row):
-        d = row["Date"]
-        season = row["Season"]
-        for p in pieces:
-            if p["season"] != season:
-                continue
-            if d <= p["real_start"]:
-                return p["plot_start"]
-            if d >= p["real_end"]:
-                return p["plot_end"]
-            frac = (d - p["real_start"]).total_seconds() / max((p["real_end"] - p["real_start"]).total_seconds(), 1)
-            return p["plot_start"] + frac * (p["plot_end"] - p["plot_start"])
-        return pieces[0]["plot_start"] if pieces else 0.0
-
-    df["PlotX"] = df.apply(_map_date, axis=1)
+    # Vectorised date → PlotX mapping via season-keyed interval lookup
+    piece_df = pd.DataFrame(pieces)
+    season_map = df[["Season"]].merge(
+        piece_df.rename(columns={"season": "Season"}),
+        on="Season",
+        how="left",
+    )
+    d = df["Date"].values
+    rs = season_map["real_start"].values
+    re = season_map["real_end"].values
+    ps = season_map["plot_start"].values
+    pe = season_map["plot_end"].values
+    span = np.maximum((re - rs) / np.timedelta64(1, "s"), 1.0)
+    frac = np.clip((d - rs) / np.timedelta64(1, "s") / span, 0.0, 1.0)
+    plot_x = ps + frac * (pe - ps)
+    # Rows with no matching season fall back to the first piece
+    df["PlotX"] = np.where(season_map["plot_start"].isna(), pieces[0]["plot_start"] if pieces else 0.0, plot_x)
 
     labels = [{"label": p["season"], "center": (p["plot_start"] + p["plot_end"]) / 2} for p in pieces]
     boundaries = [(pieces[i]["plot_end"] + pieces[i + 1]["plot_start"]) / 2 for i in range(len(pieces) - 1)]
@@ -368,9 +384,15 @@ def _deconflict_labels(
         if positions[i - 1] - positions[i] < min_gap:
             positions[i] = positions[i - 1] - min_gap
 
+    # Clamp: shift all labels up if the lowest overflows below y_lo
     if positions and positions[-1] < y_lo:
         shift = y_lo - positions[-1]
         positions = [p + shift for p in positions]
+
+    # Clamp: shift all labels down if the highest overflows above y_hi
+    if positions and positions[0] > y_hi:
+        shift = positions[0] - y_hi
+        positions = [p - shift for p in positions]
 
     pts["LabelElo"] = positions
     return pts
@@ -440,6 +462,9 @@ def _render_chart(
             if not last_season_pts.empty:
                 season_span = float(last_season_pts["PlotX"].max()) - float(last_season_pts["PlotX"].min())
                 avg_season = full_plot_range / max(len(all_seasons), 1)
+                # If the current season spans less than 35% of an average season's
+                # width, pad the right edge by 25% of an average season so the
+                # chart doesn't look cramped at the start of a new year.
                 if season_span < avg_season * 0.35:
                     full_plot_max += avg_season * 0.25
         x_enc_kwargs["scale"] = alt.Scale(domain=[full_plot_min, full_plot_max])
@@ -548,6 +573,7 @@ def _render_chart(
     _overall_max = filtered["Date"].max() if "Date" in filtered.columns else None
     _active_teams = set()
     if _overall_max is not None:
+        # ~120 days: treat teams whose last match is older than roughly one off-season as inactive
         _cutoff = _overall_max - pd.Timedelta(days=120)
         for _t, _grp in filtered.dropna(subset=["Elo"]).groupby("Team"):
             if _grp["Date"].max() >= _cutoff:
@@ -602,6 +628,7 @@ def _render_chart(
 
     chart = (
         alt.layer(*layers)
+        .resolve_scale(y="shared")
         .properties(height=480, padding={"left": 4, "top": 14, "right": 20, "bottom": 14})
         .configure_view(strokeWidth=0)
         .configure_axis(
@@ -620,8 +647,6 @@ def _render_chart(
 def render_elo_history_tab(
     engine: GrassrootsEloEngine,
     history: list[dict],
-    team_names: list[str],
-    elo_ranked: list[Team],
     league_table: list[Team],
     league_key: str,
 ) -> None:
@@ -724,18 +749,6 @@ def render_elo_history_tab(
             _by_delta = _stats.loc[_stats.index.isin(_selected_set)].sort_values("delta", ascending=False)
             _rise_names = set(_by_delta.head(3 if not is_all_time else 2).index)
             _fall_names = set(_by_delta[_by_delta["delta"] < 0].tail(3 if not is_all_time else 2).index)
-
-            def _chip(name: str, value_html: str, bg: str, border: str) -> str:
-                c = team_color(name)
-                return (
-                    f'<span style="display:inline-flex;align-items:center;gap:5px;'
-                    f'background:{bg};border:1px solid {border};border-radius:6px;'
-                    f'padding:2px 8px;margin:1px 3px;white-space:nowrap">'
-                    f'<span style="width:8px;height:8px;border-radius:50%;background:{c};flex-shrink:0"></span>'
-                    f'<span style="font-weight:600;font-size:0.78rem;color:#1e293b">{team_short(name)}</span>'
-                    f'<span style="font-size:0.75rem;font-weight:700;{value_html}</span>'
-                    f'</span>'
-                )
 
             for t in biggest_movers:
                 if t not in _stats.index:
