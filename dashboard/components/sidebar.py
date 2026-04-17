@@ -59,15 +59,11 @@ def render_sidebar() -> dict:
             "advantage is real in this league.\n\n"
             "At the start of a new season, ratings carry over from "
             "last year (with a moderate pull back toward average to "
-            "account for player movement and roster turnover). New "
-            "teams start with a lower sensitivity that ramps up as "
-            "the system gathers data on them.\n\n"
+            "account for player movement and roster turnover).\n\n"
             "**Predictions** use each team's rating — and their "
             "attacking and defensive record — to estimate the most "
             "likely scoreline and win probability for every upcoming "
-            "match.\n\n"
-            "*Ratings are provisional for the first ~10 rounds while "
-            "the system finds its feet.*",
+            "match.",
         )
 
     with st.sidebar.expander("Technical details"):
