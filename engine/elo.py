@@ -7,8 +7,9 @@ Design choices:
   - Log MoV (dampened): diminishing returns via ln(GD+1), with
                         asymmetric dampening MoV/(|Δelo|·C1+C2) so
                         expected blowouts don't over-inflate ratings
-  - Opponent-adjusted xG: team attack/defence rates adjusted for
-                          opponent quality (Massey-style)
+  - Dixon-Coles multiplicative xG: λ = μ × α_att × β_def × γ_hfa
+                                   with MLE simultaneous solver,
+                                   Bayesian shrinkage, and winsorization
   - Skellam pmf     : better than Probit for high-scoring amateur football
 """
 
@@ -18,11 +19,14 @@ import statistics
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+from scipy.optimize import minimize
 from scipy.stats import skellam
 
 from config.constants import (
     BASE_ELO,
     ELO_TO_GOAL_RATIO,
+    HFA_MULTIPLIER,
     HOME_FIELD_ADVANTAGE,
     K_FACTOR_INITIAL,
     K_FACTOR_SETTLED,
@@ -32,7 +36,10 @@ from config.constants import (
     MOV_C1,
     MOV_C2,
     PRIOR_REGRESSION_FACTOR,
+    RIDGE_LAMBDA,
+    SHRINKAGE_GAMES_FULL_TRUST,
     SKELLAM_TAIL_RANGE,
+    WINSORIZE_GOALS_CAP,
     XG_ASYMMETRY_FACTOR,
     XG_BLEND_WEIGHT,
 )
@@ -64,6 +71,7 @@ class GrassrootsEloEngine:
         self.teams: dict[str, Team] = {}
         self.processed_matches: int = 0
         self._total_goals: int = 0  # running total for adaptive league avg
+        self._match_goals: list[int] = []  # per-match total goals for median calc
         self.elo_history: list[dict[str, float]] = []  # snapshot after each match
         self.match_log: list[dict] = []  # per-match metadata
         self.initial_elos: dict[str, float] = {}  # starting Elos after priors
@@ -79,6 +87,14 @@ class GrassrootsEloEngine:
         if self.processed_matches == 0 or total == 0:
             return LEAGUE_AVG_GOALS
         return total / self.processed_matches
+
+    @property
+    def league_median_goals(self) -> float:
+        """Median total goals per match — robust to blowout outliers."""
+        match_goals = getattr(self, "_match_goals", [])
+        if not match_goals:
+            return LEAGUE_AVG_GOALS
+        return float(statistics.median(match_goals))
 
     def _get_or_create(self, name: str) -> Team:
         if name not in self.teams:
@@ -243,6 +259,11 @@ class GrassrootsEloEngine:
         home.ga += away_score
         away.gf += away_score
         away.ga += home_score
+        # Winsorized stats for rate/xG calculations
+        home.gf_capped += min(home_score, WINSORIZE_GOALS_CAP)
+        home.ga_capped += min(away_score, WINSORIZE_GOALS_CAP)
+        away.gf_capped += min(away_score, WINSORIZE_GOALS_CAP)
+        away.ga_capped += min(home_score, WINSORIZE_GOALS_CAP)
 
         if home_score > away_score:
             home.wins += 1
@@ -262,6 +283,9 @@ class GrassrootsEloEngine:
 
         self.processed_matches += 1
         self._total_goals += home_score + away_score
+        if not hasattr(self, "_match_goals"):
+            self._match_goals = []
+        self._match_goals.append(home_score + away_score)
 
         # Propagate adaptive league average to all team instances
         avg = self.league_avg_goals
@@ -337,25 +361,140 @@ class GrassrootsEloEngine:
             print(f"[Ingest] Skipped {skipped} match(es) (bye/forfeit/invalid).")
 
     # ------------------------------------------------------------------ #
-    # Skellam prediction                                                   #
+    # Dixon-Coles MLE solver                                               #
+    # ------------------------------------------------------------------ #
+
+    def _solve_attack_defence(self) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        Simultaneously fit attack (α) and defence (β) multipliers for all
+        teams via maximum-likelihood estimation on a Poisson log-linear model
+        with L2 (Ridge) regularisation.
+
+        Returns (attack_dict, defence_dict) where values are multipliers
+        relative to 1.0 (league average).  e.g. α=1.5 → 50 % above average.
+        """
+        team_names = sorted(self.teams.keys())
+        n = len(team_names)
+        idx = {name: i for i, name in enumerate(team_names)}
+
+        if n == 0 or not self.match_log:
+            return {}, {}
+
+        baseline = self.league_median_goals / 2.0
+
+        # Build match arrays (using capped goals)
+        home_idx, away_idx, home_goals, away_goals = [], [], [], []
+        for m in self.match_log:
+            hi, ai = idx.get(m["home"]), idx.get(m["away"])
+            if hi is None or ai is None:
+                continue
+            home_idx.append(hi)
+            away_idx.append(ai)
+            home_goals.append(min(m["home_score"], WINSORIZE_GOALS_CAP))
+            away_goals.append(min(m["away_score"], WINSORIZE_GOALS_CAP))
+
+        home_idx = np.array(home_idx)
+        away_idx = np.array(away_idx)
+        home_goals = np.array(home_goals, dtype=float)
+        away_goals = np.array(away_goals, dtype=float)
+
+        # x = [α_0 .. α_{n-1}, β_0 .. β_{n-1}]  (log-space for unconstrained optimisation)
+        x0 = np.zeros(2 * n)
+
+        def neg_log_lik(x):
+            log_alpha = x[:n]
+            log_beta = x[n:]
+
+            # λ_home = baseline × α_home × β_away × HFA
+            log_lam_h = (
+                np.log(baseline)
+                + log_alpha[home_idx]
+                + log_beta[away_idx]
+                + np.log(HFA_MULTIPLIER)
+            )
+            # λ_away = baseline × α_away × β_home
+            log_lam_a = (
+                np.log(baseline)
+                + log_alpha[away_idx]
+                + log_beta[home_idx]
+            )
+
+            lam_h = np.exp(np.clip(log_lam_h, -10, 5))
+            lam_a = np.exp(np.clip(log_lam_a, -10, 5))
+
+            # Poisson log-likelihood: y*log(λ) - λ - log(y!)
+            ll = (
+                home_goals * np.log(lam_h + 1e-10) - lam_h
+                + away_goals * np.log(lam_a + 1e-10) - lam_a
+            )
+
+            # L2 regularisation — pull α, β toward 0 (i.e. multiplier = 1.0)
+            penalty = RIDGE_LAMBDA * (np.sum(log_alpha ** 2) + np.sum(log_beta ** 2))
+
+            return -np.sum(ll) + penalty
+
+        result = minimize(neg_log_lik, x0, method="L-BFGS-B", options={"maxiter": 200})
+        log_alpha = result.x[:n]
+        log_beta = result.x[n:]
+
+        attack = {name: float(np.exp(log_alpha[i])) for i, name in enumerate(team_names)}
+        defence = {name: float(np.exp(log_beta[i])) for i, name in enumerate(team_names)}
+        return attack, defence
+
+    # ------------------------------------------------------------------ #
+    # Bayesian shrinkage                                                   #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _shrinkage_weight(games_played: int) -> float:
+        """
+        How much to trust observed data vs prior expectation.
+        Returns 0.0 (all prior) → 1.0 (all observed).
+        """
+        return min(1.0, games_played / SHRINKAGE_GAMES_FULL_TRUST)
+
+    def _shrink_multiplier(self, alpha_raw: float, beta_raw: float, team_elo: float, games_played: int) -> tuple[float, float]:
+        """Shrink attack and defence multipliers toward the team's Elo-implied prior."""
+        # 1. Calculate a much stronger Prior based on Elo
+        # (A 100 Elo point difference now equals a 25% shift, not 10%)
+        prior_attack = 1.0 + ((team_elo - BASE_ELO) / 400.0)
+
+        # 2. Safely clamp the attack prior so it doesn't spiral to infinity
+        prior_attack = max(0.5, min(2.5, prior_attack))
+
+        # 3. Calculate Defense Prior using mathematical inversion (never negative)
+        prior_defense = 1.0 / prior_attack
+
+        # 4. Calculate Weight
+        weight = self._shrinkage_weight(games_played)
+
+        # 5. Apply Shrinkage
+        alpha_final = (weight * alpha_raw) + ((1.0 - weight) * prior_attack)
+        beta_final = (weight * beta_raw) + ((1.0 - weight) * prior_defense)
+
+        return alpha_final, beta_final
+
+    # ------------------------------------------------------------------ #
+    # Skellam prediction (v3: Dixon-Coles multiplicative)                  #
     # ------------------------------------------------------------------ #
 
     def predict_match(
         self, home_name: str, away_name: str, neutral: bool = False
     ) -> dict:
         """
-        Predict Win/Draw/Loss probabilities using the Skellam distribution.
+        Predict Win/Draw/Loss probabilities using the Skellam distribution
+        with Dixon-Coles multiplicative xG model.
 
-        Uses variable xG derived from each team's attack/defence rates,
-        blended with Elo-derived expected goal difference.
-
-        Args:
-            home_name:  short team name (no suffix)
-            away_name:  short team name (no suffix)
-            neutral:    set True for cup finals / neutral venues (disables HFA)
+        xG derivation (v3):
+          1. MLE solver fits attack (α) and defence (β) multipliers for all
+             teams simultaneously from winsorized match results.
+          2. Bayesian shrinkage pulls α/β toward 1.0 when sample is small.
+          3. xG = median_baseline × α_att × β_def × HFA (multiplicative).
+          4. Blend with Elo-derived xG for robustness.
+          5. Feed into Skellam PMF for W/D/L probabilities.
 
         Returns:
-            dict with keys: home_win, draw, away_win (sum = 1.0),
+            dict with keys: home_win, draw, away_win (sum ≈ 1.0),
             plus xg_home, xg_away, expected_gd.
         """
         home = self._get_or_create(home_name)
@@ -363,23 +502,44 @@ class GrassrootsEloEngine:
 
         hfa = 0 if neutral else HOME_FIELD_ADVANTAGE
 
-        # Step 1: Elo-to-expected-goal-difference
+        # ── Step 1: Elo-to-expected goal difference ──
         elo_diff = (home.elo + hfa) - away.elo
         expected_gd = elo_diff / ELO_TO_GOAL_RATIO
 
-        # Step 2: Variable xG from opponent-adjusted attack/defence rates
-        raw_home_xg = (home.adj_attack_rate + away.adj_defence_rate) / 2.0
-        raw_away_xg = (away.adj_attack_rate + home.adj_defence_rate) / 2.0
+        # ── Step 2: Dixon-Coles multiplicative xG ──
+        attack_mults, defence_mults = self._solve_attack_defence()
 
-        # Step 3: Blend raw xG toward Elo-derived xG
-        league_avg_half = self.league_avg_goals / 2.0
-        elo_home_xg = league_avg_half + (expected_gd * XG_ASYMMETRY_FACTOR)
-        elo_away_xg = league_avg_half - (expected_gd * XG_ASYMMETRY_FACTOR)
-        w = XG_BLEND_WEIGHT  # 0 = pure Elo, 1 = pure opponent-adjusted
-        mu_home = max(MIN_XG, w * raw_home_xg + (1 - w) * elo_home_xg)
-        mu_away = max(MIN_XG, w * raw_away_xg + (1 - w) * elo_away_xg)
+        baseline = self.league_median_goals / 2.0
 
-        # Step 4: Skellam pmf with wide tails for grassroots blowouts
+        if attack_mults and home_name in attack_mults:
+            # Raw MLE multipliers
+            alpha_home = attack_mults[home_name]
+            beta_away = defence_mults[away_name]
+            alpha_away = attack_mults[away_name]
+            beta_home = defence_mults[home_name]
+
+            # Apply Elo-aware Bayesian shrinkage
+            alpha_home, beta_home = self._shrink_multiplier(alpha_home, beta_home, home.elo, home.played)
+            alpha_away, beta_away = self._shrink_multiplier(alpha_away, beta_away, away.elo, away.played)
+
+            hfa_mult = HFA_MULTIPLIER if not neutral else 1.0
+            dc_home_xg = baseline * alpha_home * beta_away * hfa_mult
+            dc_away_xg = baseline * alpha_away * beta_home
+        else:
+            # Fallback: no match data yet
+            dc_home_xg = baseline
+            dc_away_xg = baseline
+
+        # ── Step 3: Elo-derived xG anchor (uses median baseline) ──
+        elo_home_xg = baseline + (expected_gd * XG_ASYMMETRY_FACTOR)
+        elo_away_xg = baseline - (expected_gd * XG_ASYMMETRY_FACTOR)
+
+        # ── Step 4: Blend Dixon-Coles xG with Elo-derived xG ──
+        w = XG_BLEND_WEIGHT  # 0 = pure Elo, 1 = pure Dixon-Coles
+        mu_home = max(MIN_XG, w * dc_home_xg + (1 - w) * elo_home_xg)
+        mu_away = max(MIN_XG, w * dc_away_xg + (1 - w) * elo_away_xg)
+
+        # ── Step 5: Skellam PMF ──
         p_home_win = sum(
             skellam.pmf(k, mu_home, mu_away)
             for k in range(1, SKELLAM_TAIL_RANGE + 1)
@@ -390,7 +550,7 @@ class GrassrootsEloEngine:
             for k in range(-SKELLAM_TAIL_RANGE, 0)
         )
 
-        # Step 5: Normalise
+        # ── Step 6: Normalise ──
         total = p_home_win + p_draw + p_away_win
         return {
             "home_win": p_home_win / total,

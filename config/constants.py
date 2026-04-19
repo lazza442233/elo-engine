@@ -19,9 +19,20 @@ LEAGUE_AVG_GOALS = 7.0      # total goals per game (derived from match data)
 # ---------------------------------------------------------------------------
 ELO_TO_GOAL_RATIO = 75      # Elo pts per expected goal difference
 XG_ASYMMETRY_FACTOR = 0.85  # how aggressively xG splits between home/away (v2 optimised, was 0.75)
-XG_BLEND_WEIGHT = 0.5       # blend ratio: 0 = pure Elo xG, 1 = pure opponent-adjusted xG
+XG_BLEND_WEIGHT = 1.0       # blend ratio: 0 = pure Elo xG, 1 = pure opponent-adjusted xG
 MIN_XG = 0.2                # floor for expected goals (avoid Skellam edge cases)
 SKELLAM_TAIL_RANGE = 20     # max goal diff evaluated in Skellam PMF
+
+# ---------------------------------------------------------------------------
+# DIXON-COLES / ROBUST PREDICTION PARAMETERS (v3)
+# ---------------------------------------------------------------------------
+WINSORIZE_GOALS_CAP = 5     # cap per-team goals at this value for rate/xG calc
+                             # (a 24-0 proves the same dominance as 5-0)
+SHRINKAGE_GAMES_FULL_TRUST = 8   # games before observed rates fully replace priors
+                                  # (amateur seasons are short; quality shows by R5-6)
+RIDGE_LAMBDA = 0.01         # L2 regularisation — light touch, shrinkage does the heavy lifting
+HFA_MULTIPLIER = 1.05       # home-field advantage as scoring multiplier
+                             # (amateur leagues: small crowds, short travel → modest HFA)
 
 # ---------------------------------------------------------------------------
 # PRIOR REGRESSION

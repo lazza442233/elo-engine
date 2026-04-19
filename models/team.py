@@ -2,7 +2,7 @@
 Team model for the Grassroots Elo Engine.
 """
 
-from config.constants import BASE_ELO, LEAGUE_AVG_GOALS
+from config.constants import BASE_ELO, LEAGUE_AVG_GOALS, WINSORIZE_GOALS_CAP
 
 
 class Team:
@@ -17,8 +17,10 @@ class Team:
         self.wins = 0
         self.draws = 0
         self.losses = 0
-        self.gf = 0   # goals for
-        self.ga = 0   # goals against
+        self.gf = 0   # goals for (true)
+        self.ga = 0   # goals against (true)
+        self.gf_capped = 0   # goals for, winsorized at WINSORIZE_GOALS_CAP
+        self.ga_capped = 0   # goals against, winsorized at WINSORIZE_GOALS_CAP
         self.opp_def_sum = 0.0  # sum of opponents' defence rates (for adj attack)
         self.opp_att_sum = 0.0  # sum of opponents' attack rates (for adj defence)
 
@@ -32,14 +34,28 @@ class Team:
 
     @property
     def attack_rate(self) -> float:
-        """Goals scored per game (or league average if no games played)."""
+        """Capped goals scored per game (or league average if no games played)."""
+        if self.played == 0:
+            return self.league_avg_goals / 2.0
+        return self.gf_capped / self.played
+
+    @property
+    def attack_rate_raw(self) -> float:
+        """Un-capped goals scored per game."""
         if self.played == 0:
             return self.league_avg_goals / 2.0
         return self.gf / self.played
 
     @property
     def defence_rate(self) -> float:
-        """Goals conceded per game (or league average if no games played)."""
+        """Capped goals conceded per game (or league average if no games played)."""
+        if self.played == 0:
+            return self.league_avg_goals / 2.0
+        return self.ga_capped / self.played
+
+    @property
+    def defence_rate_raw(self) -> float:
+        """Un-capped goals conceded per game."""
         if self.played == 0:
             return self.league_avg_goals / 2.0
         return self.ga / self.played
