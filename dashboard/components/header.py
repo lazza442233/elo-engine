@@ -126,33 +126,57 @@ def render_header(
     swing_round_label = last_completed_round
     closest = _closest_upcoming(engine, raw_fixtures)
 
-    # Inline style tokens
-    label = (
-        "font-size:0.65rem; color:#94a3b8; text-transform:uppercase; "
-        "letter-spacing:0.5px; font-weight:600"
-    )
-    value = "font-size:0.88rem; font-weight:600; line-height:1.3"
-
     # Responsive CSS for the header grid
     hdr = '''<style>
     .hdr-grid {
         display:grid; grid-template-columns:repeat(5, 1fr);
-        gap:0 24px; padding:12px 0 16px;
-        border-bottom:1px solid #e2e8f0; margin-bottom:8px;
+        gap:8px; padding:12px 0 16px;
+        margin-bottom:8px;
     }
-    .hdr-grid .hdr-cell { display:flex; flex-direction:column; gap:1px; }
+    .hdr-grid .hdr-cell {
+        display:flex; flex-direction:column; gap:2px;
+        background: var(--secondary-background-color, #f8fafc);
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
+        padding: 10px 12px;
+    }
+    .hdr-grid .hdr-label {
+        font-size:0.68rem; color: var(--text-color, #475569); opacity: 0.8;
+        text-transform:uppercase; letter-spacing:0.5px; font-weight:600;
+    }
+    .hdr-grid .hdr-value {
+        font-size:0.88rem; font-weight:600; line-height:1.3;
+        color: var(--text-color, #0f172a);
+    }
+    .hdr-grid .hdr-sub {
+        font-size:0.72rem; color: var(--text-color, #64748b); opacity: 0.7;
+    }
     .hdr-grid .hdr-secondary { }
     .hdr-grid .hdr-name-full { display: inline; }
     .hdr-grid .hdr-name-short { display: none; }
+    @media (max-width: 900px) {
+        .hdr-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
     @media (max-width: 640px) {
         .hdr-grid {
             grid-template-columns: 1fr 1fr;
-            gap: 12px 16px;
+            gap: 8px;
             padding: 8px 0 12px;
         }
         .hdr-grid .hdr-secondary { display: none; }
         .hdr-grid .hdr-name-full { display: none; }
         .hdr-grid .hdr-name-short { display: inline; }
+    }
+    @media (prefers-color-scheme: dark) {
+        .hdr-grid .hdr-cell {
+            background: #1e293b;
+            border-color: #334155;
+        }
+        .hdr-grid .hdr-label { color: #cbd5e1; }
+        .hdr-grid .hdr-value { color: #f8fafc; }
+        .hdr-grid .hdr-sub   { color: #94a3b8; }
     }
     </style>
     <div class="hdr-grid">'''
@@ -161,24 +185,24 @@ def render_header(
     if leader:
         leader_short = team_short(leader.name)
         hdr += f'''<div class="hdr-cell">
-    <span style="{label}">Leader</span>
-    <span style="{value}"><span class="hdr-name-full">{leader.name}</span><span class="hdr-name-short">{leader_short}</span></span>
-    <span style="font-size:0.72rem; color:#64748b">{leader.points} pts &middot; {leader.elo:.0f} Elo</span>
+    <span class="hdr-label">Leader</span>
+    <span class="hdr-value"><span class="hdr-name-full">{leader.name}</span><span class="hdr-name-short">{leader_short}</span></span>
+    <span class="hdr-sub">{leader.points} pts &middot; {leader.elo:.0f} Elo</span>
 </div>'''
 
     if closest:
         home_short = team_short(closest["home"])
         away_short = team_short(closest["away"])
         hdr += f'''<div class="hdr-cell">
-    <span style="{label}">Closest matchup Rd {detected_round}</span>
-    <span style="{value}"><span class="hdr-name-full">{closest["home"]} vs {closest["away"]}</span><span class="hdr-name-short">{home_short} vs {away_short}</span></span>
-    <span style="font-size:0.72rem; color:#64748b">{closest["draw_pct"]*100:.0f}% draw probability</span>
+    <span class="hdr-label">Closest matchup Rd {detected_round}</span>
+    <span class="hdr-value"><span class="hdr-name-full">{closest["home"]} vs {closest["away"]}</span><span class="hdr-name-short">{home_short} vs {away_short}</span></span>
+    <span class="hdr-sub">{closest["draw_pct"]*100:.0f}% draw probability</span>
 </div>'''
 
     # Secondary KPIs (hidden on mobile)
     hdr += f'''<div class="hdr-cell hdr-secondary">
-    <span style="{label}">Next round</span>
-    <span style="{value}">Round {detected_round}</span>
+    <span class="hdr-label">Next round</span>
+    <span class="hdr-value">Round {detected_round}</span>
 </div>'''
 
     if swing:
@@ -191,14 +215,14 @@ def render_header(
         home_short_sw = team_short(swing["home"])
         away_short_sw = team_short(swing["away"])
         hdr += f'''<div class="hdr-cell hdr-secondary">
-    <span style="{label}">{swing_label}</span>
-    <span style="{value}"><span class="hdr-name-full">{swing["home"]} {swing["home_score"]}&ndash;{swing["away_score"]} {swing["away"]}</span><span class="hdr-name-short">{home_short_sw} {swing["home_score"]}&ndash;{swing["away_score"]} {away_short_sw}</span></span>
-    <span style="font-size:0.72rem; color:#64748b">{swing_sub}</span>
+    <span class="hdr-label">{swing_label}</span>
+    <span class="hdr-value"><span class="hdr-name-full">{swing["home"]} {swing["home_score"]}&ndash;{swing["away_score"]} {swing["away"]}</span><span class="hdr-name-short">{home_short_sw} {swing["home_score"]}&ndash;{swing["away_score"]} {away_short_sw}</span></span>
+    <span class="hdr-sub">{swing_sub}</span>
 </div>'''
 
     hdr += f'''<div class="hdr-cell hdr-secondary">
-    <span style="{label}">Goals per game</span>
-    <span style="{value}">{avg_gpg:.1f}</span>
+    <span class="hdr-label">Goals per game</span>
+    <span class="hdr-value">{avg_gpg:.1f}</span>
 </div>'''
 
     hdr += "</div>"

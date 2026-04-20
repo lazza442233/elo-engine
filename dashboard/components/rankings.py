@@ -34,13 +34,16 @@ _RANKINGS_CSS = """<style>
     --clr-win: #22c55e; --clr-draw: #94a3b8; --clr-loss: #ef4444;
     --drift-up-bg: #dcfce7; --drift-up-fg: #16a34a;
     --drift-dn-bg: #fee2e2; --drift-dn-fg: #dc2626;
-    --drift-eq-bg: #f1f5f9; --drift-eq-fg: #94a3b8;
+    --drift-eq-bg: #f1f5f9; --drift-eq-fg: #475569;
 }
 @media (prefers-color-scheme: dark) {
     :root {
         --bg: #0e1117; --fg: #fafafa; --muted: #94a3b8;
         --border: #1e293b; --th-border: #334155;
         --bar-bg: #1e293b; --tip-bg: #f1f5f9; --tip-fg: #0e1117;
+        --drift-up-bg: #064e3b; --drift-up-fg: #4ade80;
+        --drift-dn-bg: #7f1d1d; --drift-dn-fg: #f87171;
+        --drift-eq-bg: #334155; --drift-eq-fg: #cbd5e1;
     }
 }
 
@@ -75,7 +78,7 @@ tr:active td { background:inherit !important; }
 .pts-cell    { font-weight:700; font-size:1rem; }
 
 /* ── Drift chips ──────────────────────────────────────────────── */
-.drift-chip     { display:inline-block; padding:1px 5px; border-radius:6px; font-size:0.65rem; font-weight:600; line-height:1.4; }
+.drift-chip     { display:inline-block; padding:3px 8px; border-radius:6px; font-size:0.75rem; font-weight:600; line-height:1.4; text-align:center; min-width: 20px; }
 .drift-chip--up { background:var(--drift-up-bg); color:var(--drift-up-fg); }
 .drift-chip--dn { background:var(--drift-dn-bg); color:var(--drift-dn-fg); }
 .drift-chip--eq { background:var(--drift-eq-bg); color:var(--drift-eq-fg); }
@@ -113,14 +116,14 @@ tr:active td { background:inherit !important; }
 
 /* ── Mobile ───────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-    table      { font-size:0.82rem; table-layout:auto; width:100%; max-width:100%; }
-    th, td     { padding:8px 4px; width:auto !important; }
+    table      { font-size:0.88rem; table-layout:auto; width:100%; max-width:100%; }
+    th, td     { padding:12px 4px; width:auto !important; }
     .col-secondary { display:none; }
     .name-full  { display:none; }
     .name-short { display:inline; }
-    .elo-cell   { background:none !important; font-size:0.88rem !important; font-weight:600 !important; }
-    .pts-cell   { font-size:0.88rem !important; font-weight:600 !important; }
-    .gd-cell    { font-weight:500 !important; font-size:0.82rem !important; }
+    .elo-cell   { background:none !important; font-size:0.92rem !important; font-weight:600 !important; }
+    .pts-cell   { font-size:0.92rem !important; font-weight:600 !important; }
+    .gd-cell    { font-weight:500 !important; font-size:0.88rem !important; }
     body        { margin:0; padding:0; overflow-x:hidden; }
 }
 </style>"""
@@ -180,10 +183,10 @@ def _drift_chip(rank: int, elo_pos: int) -> str:
     """HTML chip showing difference between ladder rank and Elo rank."""
     diff = rank - elo_pos
     if diff > 0:
-        return f'<span class="drift-chip drift-chip--up">+{diff}</span>'
+        return f'<span class="drift-chip drift-chip--up has-tip tip-above" data-tip="Underrated: Elo thinks they are {diff} spot(s) better">+{diff}</span>'
     if diff < 0:
-        return f'<span class="drift-chip drift-chip--dn">{diff}</span>'
-    return '<span class="drift-chip drift-chip--eq">&pm;0</span>'
+        return f'<span class="drift-chip drift-chip--dn has-tip tip-above" data-tip="Overrated: Elo thinks they are {-diff} spot(s) worse">{diff}</span>'
+    return '<span class="drift-chip drift-chip--eq has-tip tip-above" data-tip="Spot on: Elo and ladder agree">&pm;0</span>'
 
 
 def _gd_html(gd: int) -> str:

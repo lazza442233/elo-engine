@@ -50,60 +50,49 @@ def render_sidebar() -> dict:
     st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
     with st.sidebar.expander("How it works"):
         st.markdown(
-            "Every team has an **Elo rating** — a single number that "
-            "represents how strong they are right now. When a team "
-            "wins, their rating goes up and the loser's goes down. "
-            "A bigger win means a bigger change.\n\n"
-            "Beating a strong team is worth more than beating a weak "
-            "one, and the home side gets a small boost because home "
-            "advantage is real in this league.\n\n"
-            "At the start of a new season, ratings carry over from "
-            "last year (with a moderate pull back toward average to "
-            "account for player movement and roster turnover).\n\n"
-            "**Predictions** use each team's rating — and their "
-            "attacking and defensive record — to estimate the most "
-            "likely scoreline and win probability for every upcoming "
-            "match.",
+            "📈 **Elo Rating**\n"
+            "Every team has a single rating number. Beating a strong team increases your rating more than beating a weak one.\n\n"
+            "🏟️ **Home Advantage**\n"
+            "The home side gets a small Elo boost based on real historical data.\n\n"
+            "🔄 **Season Carry-Over**\n"
+            "Ratings carry over from last year, but are pulled 40% toward average to account for player turnover.\n\n"
+            "🔮 **Predictions**\n"
+            "The model estimates win probabilities and expected goals (xG) using a Skellam-Elo hybrid approach."
         )
 
     with st.sidebar.expander("Technical details"):
         st.markdown(
-            "All parameters have been **empirically optimized** "
-            "against four seasons of historical data (2022–2025) using "
-            "a 2,000-sample Latin Hypercube search followed by a "
-            "refined grid, with 3-fold expanding-window walk-forward "
-            "validation. The model achieves a Brier score of **0.479** "
-            "on the 2025 holdout season (random guessing ≈ 0.67).\n\n"
-            "- **K-factor**: Linearly ramps from 30 → 35 over "
-            "a team's first 10 games (averaged across both teams). "
-            "Game counts carry across seasons, so only genuine "
-            "newcomers use the lower initial K.\n"
-            "- **Home-Field Advantage**: +30 Elo points, derived from "
-            "four seasons of observed home win rates (~47%).\n"
-            "- **Margin of Victory**: Asymmetric log dampening "
-            "(C₁=0.001, C₂=2.0) — large wins shift ratings more, "
-            "but with diminishing returns. Draws carry a mild "
-            "total-goals signal so high-scoring draws are "
-            "distinguished from goalless ones.\n"
-            "- **Opponent-Adjusted Rates**: Per-team attack and "
-            "defence rates are adjusted for opponent quality. Scoring "
-            "against a strong defence counts more.\n"
-            "- **Skellam Predictions**: Match odds via a Skellam "
-            "distribution using per-team xG blended 50/50 from "
-            "opponent-adjusted rates and Elo-derived expectations "
-            "(75 Elo pts ≈ 1 goal difference). Display xG is inflated "
-            "for extreme mismatches (marked with ⓘ); win probability "
-            "is the primary predictor.\n"
-            "- **Carry-Forward**: 60% Elo delta retention across "
-            "seasons (40% regression toward 1500). Newcomers seeded "
-            "at an anchor based on their expected competitive level. "
-            "League average is conserved at 1500.\n\n"
-            "---\n\n"
-            "<small style='color:#94a3b8'>Skellam-Elo Hybrid · "
-            "374 matches · 4 seasons · Data via Dribl API</small>",
+            "Empirically optimized against 2022–2025 historical data.\n\n"
+            "**Key Parameters:**\n"
+            "- **K-factor**: Ramps 30 → 35 over a team's first 10 games.\n"
+            "- **Home Advantage**: +30 Elo points.\n"
+            "- **Margin of Victory**: Asymmetric log dampening. Large wins yield diminishing returns.\n"
+            "- **Opponent-Adjusted Rates**: Attack/defence adjusted for opponent quality.\n"
+            "- **Skellam Predictions**: Win probability via Skellam distributions using blended xG.\n"
+            "- **Carry-Forward**: 60% Elo retention across seasons.\n\n"
+            "---\n"
+            "<small style='color:#94a3b8'>Skellam-Elo Hybrid · 4 seasons · Data via Dribl API</small>",
             unsafe_allow_html=True,
         )
 
     return {
         "league_key": league_key,
     }
+
+
+def render_sidebar_stats(engine) -> None:
+    """Render summary statistics in the sidebar below the league selector."""
+    played_matches = engine.processed_matches
+
+    st.sidebar.markdown(
+        f"""
+        <div style="background:var(--secondary-background-color, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px; padding:12px; margin-bottom: 20px;">
+            <div style="font-size:0.65rem; color:var(--text-color, #475569); opacity:0.8; text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">League Overview</div>
+            <div style="margin-top:6px;">
+                <span style="display:block; font-size:0.88rem; font-weight:600; color:var(--text-color, #0f172a);">Matches Tracked</span>
+                <span style="font-size:0.72rem; color:var(--text-color, #64748b); opacity:0.8;">{played_matches} completed matches</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
