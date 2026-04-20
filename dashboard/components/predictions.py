@@ -124,7 +124,7 @@ def render_predictions_tab(
         aw = result["away_win"]
         xg_h = result["xg_home"]
         xg_a = result["xg_away"]
-        exp_gd = result["expected_gd"]
+        result["expected_gd"]
 
         # Cosmetic xG override for extreme mismatches (display only)
         disp_xg_h, disp_xg_a, xg_overridden = _display_xg(xg_h, xg_a, hw, aw)

@@ -127,7 +127,6 @@ def render_header(
     closest = _closest_upcoming(engine, raw_fixtures)
 
     # Inline style tokens
-    cell = "display:flex; flex-direction:column; gap:1px"
     label = (
         "font-size:0.65rem; color:#94a3b8; text-transform:uppercase; "
         "letter-spacing:0.5px; font-weight:600"

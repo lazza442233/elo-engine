@@ -317,16 +317,16 @@ def main():
     print("  Methodology applied:")
     print(f"    • Walk-forward simulation across 2022–2025 with {REGRESSION_FACTOR} regression at each boundary")
     print(f"    • Final 2025→2026 regression: retain {retention:.0%} of delta from {BASE_ELO}")
-    print(f"    • Transferred teams: anchored at historical avg 1st-place Elo per grade, then regressed")
+    print("    • Transferred teams: anchored at historical avg 1st-place Elo per grade, then regressed")
     print(f"    • Promoted teams: start at {BASE_ELO:.0f} (no information advantage)")
-    print(f"    • Hiatus teams: carry accumulated (already-regressed) Elo, plus one more regression")
+    print("    • Hiatus teams: carry accumulated (already-regressed) Elo, plus one more regression")
     print(f"    • Normalization: all priors shifted so league average = {BASE_ELO:.0f} (Elo conservation)")
     print()
     print("  ⚠  Regression factor note:")
     print(f"    Production code (config/constants.py) uses PRIOR_REGRESSION_FACTOR = {PRIOR_REGRESSION_FACTOR} ({1 - PRIOR_REGRESSION_FACTOR:.0%} retention).")
     print(f"    This script used REGRESSION_FACTOR = {REGRESSION_FACTOR} ({retention:.0%} retention).")
     if REGRESSION_FACTOR != 0.2:
-        print(f"    ⚠ This differs from the validated value. Review before committing.")
+        print("    ⚠ This differs from the validated value. Review before committing.")
     print()
 
 

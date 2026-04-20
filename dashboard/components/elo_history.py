@@ -330,9 +330,12 @@ def _build_dataframe(
                 score_str = f"{hs}\u2013{as_}" if is_home else f"{as_}\u2013{hs}"
 
                 # Result resolution
-                if hs == as_: result = "D"
-                elif (is_home and hs > as_) or (not is_home and as_ > hs): result = "W"
-                else: result = "L"
+                if hs == as_:
+                    result = "D"
+                elif (is_home and hs > as_) or (not is_home and as_ > hs):
+                    result = "W"
+                else:
+                    result = "L"
 
                 sign = "+" if delta > 0 else ""
                 ctx = f"{result} {score_str} vs {team_short(opp)} ({sign}{delta:.0f})"
@@ -697,7 +700,8 @@ def render_elo_history_tab(
             last_hist_season = hist_seasons[-1]
             for t_name, start_elo in initial_elos.items():
                 team_hist = hist_df[(hist_df["Team"] == t_name) & (hist_df["Season"] == last_hist_season) & (hist_df["Elo"].notna())]
-                if team_hist.empty: continue
+                if team_hist.empty:
+                    continue
 
                 last_elo = float(team_hist.sort_values("Date").iloc[-1]["Elo"])
                 delta = start_elo - last_elo
@@ -709,7 +713,8 @@ def render_elo_history_tab(
         live_for_all = live_df[live_df["Context"] != "Season start"].copy()
 
         parts = [hist_df]
-        if regression_rows: parts.append(pd.DataFrame(regression_rows))
+        if regression_rows:
+            parts.append(pd.DataFrame(regression_rows))
         parts.append(live_for_all)
 
         df = pd.concat(parts, ignore_index=True).sort_values(["Team", "Date"]).reset_index(drop=True)

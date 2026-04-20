@@ -31,7 +31,6 @@ from display.output import (
 from engine.calibration import compute_brier_score, log_prediction
 from engine.elo import GrassrootsEloEngine
 from persistence.db import (
-    get_match_count,
     init_db,
     load_matches,
     save_matches,
@@ -108,7 +107,7 @@ def main():
             print()
             print(f"  Brier Score: {result['brier_score']:.4f}  "
                   f"({result['n_predictions']} predictions logged)")
-            print(f"  (lower is better — random = 0.667, perfect = 0.000)")
+            print("  (lower is better — random = 0.667, perfect = 0.000)")
             print()
         return
 

@@ -220,15 +220,15 @@ class GrassrootsEloEngine:
         # Expected win probability (home gets HFA boost)
         elo_home_adj = home.elo + HOME_FIELD_ADVANTAGE
         e_home = self.expected_score(elo_home_adj, away.elo)
-        e_away = 1.0 - e_home
+        1.0 - e_home
 
         # Actual score (1 = win, 0.5 = draw, 0 = loss)
         if home_score > away_score:
-            s_home, s_away = 1.0, 0.0
+            s_home, _s_away = 1.0, 0.0
         elif home_score < away_score:
-            s_home, s_away = 0.0, 1.0
+            s_home, _s_away = 0.0, 1.0
         else:
-            s_home, s_away = 0.5, 0.5
+            s_home, _s_away = 0.5, 0.5
 
         # MoV multiplier with autocorrelation dampening
         # Dampens MoV bonus when the Elo gap already predicted the blowout
@@ -511,6 +511,10 @@ class GrassrootsEloEngine:
 
         baseline = self.league_median_goals / 2.0
 
+        # ── Step 3: Elo-derived xG anchor (uses median baseline) ──
+        elo_home_xg = baseline + (expected_gd * XG_ASYMMETRY_FACTOR)
+        elo_away_xg = baseline - (expected_gd * XG_ASYMMETRY_FACTOR)
+
         if attack_mults and home_name in attack_mults:
             # Raw MLE multipliers
             alpha_home = attack_mults[home_name]
@@ -527,12 +531,8 @@ class GrassrootsEloEngine:
             dc_away_xg = baseline * alpha_away * beta_home
         else:
             # Fallback: no match data yet
-            dc_home_xg = baseline
-            dc_away_xg = baseline
-
-        # ── Step 3: Elo-derived xG anchor (uses median baseline) ──
-        elo_home_xg = baseline + (expected_gd * XG_ASYMMETRY_FACTOR)
-        elo_away_xg = baseline - (expected_gd * XG_ASYMMETRY_FACTOR)
+            dc_home_xg = elo_home_xg
+            dc_away_xg = elo_away_xg
 
         # ── Step 4: Blend Dixon-Coles xG with Elo-derived xG ──
         w = XG_BLEND_WEIGHT  # 0 = pure Elo, 1 = pure Dixon-Coles

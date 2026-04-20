@@ -2,7 +2,7 @@
 Team model for the Grassroots Elo Engine.
 """
 
-from config.constants import BASE_ELO, LEAGUE_AVG_GOALS, WINSORIZE_GOALS_CAP
+from config.constants import BASE_ELO, LEAGUE_AVG_GOALS
 
 
 class Team:

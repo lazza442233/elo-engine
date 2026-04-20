@@ -4,7 +4,6 @@ Unit tests for the Grassroots Elo Engine.
 Run with:  python -m pytest tests/ -v
 """
 
-import csv
 import json
 import math
 import sqlite3

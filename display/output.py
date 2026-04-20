@@ -3,7 +3,6 @@ Display helpers for rendering rankings and predictions to the terminal.
 """
 
 import json
-from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from dashboard.helpers import parse_fixture_datetime

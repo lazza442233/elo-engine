@@ -63,7 +63,6 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
     import engine.elo as elo_mod
     from config.constants import BASE_ELO
     from engine.elo import GrassrootsEloEngine
-    from models.team import Team
 
     # Monkey-patch constants in the engine module's namespace
     elo_mod.K_FACTOR_INITIAL = params["K_FACTOR_INITIAL"]
@@ -348,7 +347,7 @@ def run_stage1(grade: str, n_samples: int = 2000, workers: int | None = None):
         writer.writerows(rows)
 
     print(f"\n[Stage 1] Complete. Results: {output_path}")
-    print(f"[Stage 1] Top 10 configurations:")
+    print("[Stage 1] Top 10 configurations:")
     for i, row in enumerate(rows[:10]):
         print(f"  {i+1}. Brier={float(row['brier_mean']):.4f}  "
               f"K_I={row['K_FACTOR_INITIAL']} K_S={row['K_FACTOR_SETTLED']} "
@@ -520,7 +519,7 @@ def run_stage3(grade: str):
         "XG_BLEND_WEIGHT": 0.5, "MIN_XG": 0.2,
     }
 
-    print(f"[Stage 3] Champion config:")
+    print("[Stage 3] Champion config:")
     for k, v in champion.items():
         changed = " ← CHANGED" if v != production[k] else ""
         print(f"  {k} = {v}{changed}")
@@ -550,7 +549,7 @@ def run_stage3(grade: str):
           f"{float(champ_result['accuracy_mean']):>12.1%}")
 
     # --- 3b. Bootstrap CI ---
-    print(f"\n[Stage 3] Bootstrap confidence interval (1,000 resamples)...")
+    print("\n[Stage 3] Bootstrap confidence interval (1,000 resamples)...")
     rng = np.random.default_rng(42)
     bootstrap_deltas = []
 
@@ -650,11 +649,11 @@ def run_stage3(grade: str):
     print(f"  Mean Brier delta: {mean_delta:+.4f}")
     print(f"  95% CI: [{ci_lo:+.4f}, {ci_hi:+.4f}]")
     if ci_hi < 0:
-        print(f"  → Improvement is STATISTICALLY SIGNIFICANT (entire CI below zero)")
+        print("  → Improvement is STATISTICALLY SIGNIFICANT (entire CI below zero)")
     elif ci_lo > 0:
-        print(f"  → Champion is WORSE (entire CI above zero)")
+        print("  → Champion is WORSE (entire CI above zero)")
     else:
-        print(f"  → Improvement is NOT statistically significant (CI spans zero)")
+        print("  → Improvement is NOT statistically significant (CI spans zero)")
 
     # --- 3c. Reserve grade cross-check ---
     other_grade = "reserve_grade" if grade == "first_grade" else "first_grade"

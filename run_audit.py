@@ -295,11 +295,11 @@ def main():
     print("─" * 72)
     print("  §2 DATA INTEGRITY & INGESTION")
     print("─" * 72)
-    print(f"  Schema check: ✓ No changes between 2022 and 2025 raw JSON")
+    print("  Schema check: ✓ No changes between 2022 and 2025 raw JSON")
     for s, ms in by_season.items():
         byes_forfeits = len([m for m in load_all_rows() if m["season"] == s and m["grade"] == GRADE and m["status"] != "complete"])
         print(f"  {s}: {len(ms)} complete matches (filtered: {byes_forfeits} non-complete)")
-    print(f"  Pipeline status: ✓ Nominal")
+    print("  Pipeline status: ✓ Nominal")
     print()
 
     # ── §3: Performance Backtest ───────────────────────────────────
@@ -343,7 +343,7 @@ def main():
             brier_delta = s2025["brier"] - avg_brier
             ll_delta = s2025["logloss"] - avg_ll
             print()
-            print(f"  2025 vs prior-season average:")
+            print("  2025 vs prior-season average:")
             print(f"    Brier delta: {brier_delta:+.4f} ({'degraded' if brier_delta > 0.02 else 'stable' if abs(brier_delta) <= 0.02 else 'improved'})")
             print(f"    Log-loss delta: {ll_delta:+.4f} ({'degraded' if ll_delta > 0.05 else 'stable' if abs(ll_delta) <= 0.05 else 'improved'})")
 
@@ -399,7 +399,7 @@ def main():
     all_ag = [d["avg_goals_per_game"] for d in dynamics.values()]
     all_dr = [d["draw_pct"] for d in dynamics.values()]
     print()
-    print(f"  Historical averages (all seasons):")
+    print("  Historical averages (all seasons):")
     print(f"    Home Win %:     {statistics.mean(all_hw):.1f}% (σ={statistics.stdev(all_hw):.1f}%)")
     print(f"    Avg Goals/Game: {statistics.mean(all_ag):.2f} (σ={statistics.stdev(all_ag):.2f})")
     print(f"    Draw %:         {statistics.mean(all_dr):.1f}% (σ={statistics.stdev(all_dr):.1f}%)")
@@ -490,15 +490,15 @@ def main():
         recommendation = "No Action Required"
         print(f"  Overall Health: ✓ {health}")
         print(f"  Key Finding: The model's performance on the {latest} season remains")
-        print(f"  consistent with historical backtests, showing no significant drift.")
+        print("  consistent with historical backtests, showing no significant drift.")
         print()
         print(f"  ✓ Recommendation: {recommendation}")
-        print(f"    The model is performing within expected parameters. Continue monitoring.")
+        print("    The model is performing within expected parameters. Continue monitoring.")
     elif len(issues) <= 2 and all("slightly" in i or "elevated" in i for i in issues):
         health = "REQUIRES RECALIBRATION"
         recommendation = "Recalibrate Model"
         print(f"  Overall Health: ⚠ {health}")
-        print(f"  Issues detected:")
+        print("  Issues detected:")
         for issue in issues:
             print(f"    • {issue}")
         print()
@@ -508,12 +508,12 @@ def main():
         health = "DEGRADED"
         recommendation = "Investigate Anomaly"
         print(f"  Overall Health: ✗ {health}")
-        print(f"  Issues detected:")
+        print("  Issues detected:")
         for issue in issues:
             print(f"    • {issue}")
         print()
         print(f"  ✗ Recommendation: {recommendation}")
-        print(f"    A deeper investigation is required before recalibration.")
+        print("    A deeper investigation is required before recalibration.")
 
     print()
     print("=" * 72)
