@@ -467,6 +467,22 @@ class TestMatchRecord:
         assert record.round_number == 3
         assert record.home_team == "Home FC"
 
+    def test_from_db_row_preserves_round_label(self):
+        row = {
+            "match_date": "2025-04-05 15:00:00",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "home_score": 2,
+            "away_score": 1,
+            "status": "played",
+            "round_label": "Round 3",
+        }
+
+        record = MatchRecord.from_db_row(row)
+        assert record is not None
+        assert record.round_label == "Round 3"
+        assert record.source == "db"
+
     def test_normalize_match_records_filters_invalid_api_rows(self):
         data = [
             {
@@ -701,13 +717,42 @@ class TestPersistence:
         assert "elo_snapshots" in tables
         assert "team_ratings" in tables
 
+    def test_init_migrates_existing_matches_table(self, tmp_path):
+        from persistence.db import init_db
+
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            """CREATE TABLE matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                league_key TEXT NOT NULL,
+                match_date TEXT NOT NULL,
+                home_team TEXT NOT NULL,
+                away_team TEXT NOT NULL,
+                home_score INTEGER NOT NULL,
+                away_score INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'played',
+                api_hash TEXT NOT NULL,
+                UNIQUE(league_key, api_hash)
+            )"""
+        )
+        conn.commit()
+        conn.close()
+
+        init_db(db)
+
+        conn = sqlite3.connect(str(db))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(matches)").fetchall()}
+        conn.close()
+        assert "round_label" in columns
+
     def test_save_and_load_matches(self, tmp_path):
         from persistence.db import init_db, save_matches, load_matches
         db = tmp_path / "test.db"
         init_db(db)
         matches = [
             {"date": "2025-04-01 15:00:00", "home_team": "A", "away_team": "B",
-             "home_score": 3, "away_score": 1},
+             "home_score": 3, "away_score": 1, "round_label": "Round 1"},
             {"date": "2025-04-08 15:00:00", "home_team": "C", "away_team": "D",
              "home_score": 0, "away_score": 0},
         ]
@@ -717,6 +762,27 @@ class TestPersistence:
         loaded = load_matches("test-league", db)
         assert len(loaded) == 2
         assert loaded[0]["home_team"] == "A"
+        assert loaded[0]["round_label"] == "Round 1"
+
+    def test_load_match_records_restores_round_labels(self, tmp_path):
+        from persistence.db import init_db, load_match_records, save_matches
+
+        db = tmp_path / "test.db"
+        init_db(db)
+        save_matches("test-league", [{
+            "date": "2025-04-01 15:00:00",
+            "home_team": "A",
+            "away_team": "B",
+            "home_score": 3,
+            "away_score": 1,
+            "status": "played",
+            "round_label": "Round 1",
+        }], db)
+
+        records = load_match_records("test-league", db)
+        assert len(records) == 1
+        assert records[0].round_label == "Round 1"
+        assert records[0].source == "db"
 
     def test_duplicate_matches_skipped(self, tmp_path):
         from persistence.db import init_db, save_matches, get_match_count

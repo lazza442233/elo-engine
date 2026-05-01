@@ -30,10 +30,10 @@ from display.output import (
 )
 from engine.calibration import compute_brier_score
 from engine.elo import GrassrootsEloEngine
-from engine.match_record import normalize_match_records
+from engine.match_record import MatchRecord, normalize_match_records
 from persistence.db import (
     init_db,
-    load_matches,
+    load_match_records,
     save_matches,
     save_team_ratings,
 )
@@ -132,12 +132,11 @@ def main():
     if offline:
         if not quiet:
             print("[1/5] Loading cached match data from SQLite...")
-        cached = load_matches(league_key)
-        if not cached:
+        match_records = load_match_records(league_key)
+        if not match_records:
             if not quiet:
                 print("      ERROR: No cached data. Run online first to populate.")
             return
-        match_records, _ = normalize_match_records(cached)
         if not quiet:
             print(f"      Loaded {len(match_records)} cached result(s).")
         if not quiet:
@@ -152,9 +151,8 @@ def main():
                 print(f"      Retrieved {len(raw_matches)} result(s).")
         except Exception as exc:
             # Fall back to cached data if available
-            cached = load_matches(league_key)
-            if cached:
-                match_records, _ = normalize_match_records(cached)
+            match_records = load_match_records(league_key)
+            if match_records:
                 offline = True
                 if not quiet:
                     print(f"      WARNING: API failed ({exc}). "
@@ -234,7 +232,7 @@ def main():
 
     # Persist to SQLite (skip in offline mode — data already there)
     if not offline:
-        _save_to_db(league_key, raw_matches, engine, quiet)
+        _save_to_db(league_key, match_records, engine, quiet)
 
     # ------------------------------------------------------------------
     # 5. Output
@@ -266,29 +264,21 @@ def main():
         engine.export_elo_history()
 
 
-def _save_to_db(league_key: str, raw_matches: list[dict],
+def _save_to_db(league_key: str, match_records: list[MatchRecord],
                 engine: GrassrootsEloEngine, quiet: bool):
     """Persist processed matches and team ratings to SQLite."""
-    SKIP_STATUSES = {"forfeit", "abandoned", "postponed", "upcoming", "bye"}
     rows = []
-    for match in raw_matches:
-        attrs = match["attributes"]
-        if attrs.get("bye_flag", 0):
-            continue
-        status = attrs.get("status", "").lower()
-        if status in SKIP_STATUSES:
-            continue
-        home_score = attrs.get("home_score")
-        away_score = attrs.get("away_score")
-        if home_score is None or away_score is None:
+    for record in match_records:
+        if record.match_date is None:
             continue
         rows.append({
-            "date": attrs["date"],
-            "home_team": GrassrootsEloEngine._shorten_name(attrs["home_team_name"]),
-            "away_team": GrassrootsEloEngine._shorten_name(attrs["away_team_name"]),
-            "home_score": int(home_score),
-            "away_score": int(away_score),
-            "status": status,
+            "match_date": record.match_date,
+            "home_team": record.home_team,
+            "away_team": record.away_team,
+            "home_score": record.home_score,
+            "away_score": record.away_score,
+            "status": record.status,
+            "round_label": record.round_label,
         })
     inserted = save_matches(league_key, rows)
     save_team_ratings(league_key, engine.teams)

@@ -138,6 +138,7 @@ class MatchRecord:
             away_score=int(away_score),
             match_date=match_date,
             kickoff=parse_match_datetime(match_date),
+            round_label=row.get("round_label"),
             status=status,
             source="db",
         )
