@@ -688,6 +688,14 @@ class TestMultiLeague:
 
 
 class TestDashboardPriors:
+    def test_normalize_sidebar_config_defaults_missing_use_priors(self):
+        from dashboard.components.sidebar import normalize_sidebar_config
+
+        config = normalize_sidebar_config({"league_key": "prem-men"})
+
+        assert config["league_key"] == "prem-men"
+        assert config["use_priors"] is True
+
     def test_build_engine_respects_use_priors_flag(self, tmp_path, monkeypatch):
         from dashboard.data import PRIORS_PATHS, build_engine
 

@@ -7,10 +7,28 @@ import streamlit as st
 from config.constants import DEFAULT_LEAGUE, LEAGUES
 
 
+def normalize_sidebar_config(config: dict | None) -> dict:
+    """Backfill defaults for legacy sidebar payloads."""
+    config = config or {}
+
+    league_key = config.get("league_key", DEFAULT_LEAGUE)
+    if league_key not in LEAGUES:
+        league_key = DEFAULT_LEAGUE
+
+    use_priors = config.get("use_priors", True)
+    if not isinstance(use_priors, bool):
+        use_priors = bool(use_priors)
+
+    return {
+        "league_key": league_key,
+        "use_priors": use_priors,
+    }
+
+
 def render_sidebar() -> dict:
     """Render the sidebar and return user selections.
 
-    Returns a dict with keys: league_key.
+    Returns a dict with keys: league_key, use_priors.
     """
     st.sidebar.markdown(
         '<div style="padding:8px 0 4px">'

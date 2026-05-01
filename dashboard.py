@@ -11,7 +11,11 @@ from dashboard.components.elo_history import render_elo_history_tab
 from dashboard.components.header import render_header
 from dashboard.components.predictions import render_predictions_tab
 from dashboard.components.rankings import render_rankings_tab
-from dashboard.components.sidebar import render_sidebar, render_sidebar_stats
+from dashboard.components.sidebar import (
+    normalize_sidebar_config,
+    render_sidebar,
+    render_sidebar_stats,
+)
 from dashboard.data import build_engine, compute_league_state, load_fixtures, load_matches
 
 st.set_page_config(page_title="Elo Engine", page_icon="E", layout="wide")
@@ -35,7 +39,7 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # Sidebar
-sidebar_cfg = render_sidebar()
+sidebar_cfg = normalize_sidebar_config(render_sidebar())
 league_key = sidebar_cfg["league_key"]
 use_priors = sidebar_cfg["use_priors"]
 league_cfg = LEAGUES[league_key]
