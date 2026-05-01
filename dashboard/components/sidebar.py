@@ -47,6 +47,12 @@ def render_sidebar() -> dict:
         league_label = _default
     league_key = _LABEL_TO_KEY[league_label]
 
+    use_priors = st.sidebar.toggle(
+        "Carry-forward ratings",
+        value=True,
+        help="Use regressed end-of-season ratings as starting priors for active teams.",
+    )
+
     st.sidebar.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
     with st.sidebar.expander("How it works"):
         st.markdown(
@@ -77,6 +83,7 @@ def render_sidebar() -> dict:
 
     return {
         "league_key": league_key,
+        "use_priors": use_priors,
     }
 
 

@@ -4,6 +4,7 @@ Unit tests for the Grassroots Elo Engine.
 Run with:  python -m pytest tests/ -v
 """
 
+import csv
 import json
 import math
 import sqlite3
@@ -22,6 +23,7 @@ from config.constants import (
 )
 from engine.calibration import compute_brier_score, log_prediction
 from engine.elo import GrassrootsEloEngine
+from engine.match_record import MatchRecord, normalize_match_records
 from models.team import Team
 
 
@@ -352,6 +354,149 @@ class TestCalibration:
         monkeypatch.setattr("engine.calibration.CALIBRATION_LOG", tmp_path / "nope.csv")
         assert compute_brier_score() is None
 
+    def test_process_matches_logs_walk_forward_predictions(self, tmp_path, monkeypatch):
+        log_path = tmp_path / "cal.csv"
+        monkeypatch.setattr("engine.calibration.CALIBRATION_LOG", log_path)
+
+        match = {
+            "attributes": {
+                "date": "2025-04-01 15:00:00",
+                "home_team_name": "A",
+                "away_team_name": "B",
+                "home_score": 3,
+                "away_score": 0,
+                "status": "played",
+                "bye_flag": 0,
+                "full_round": "Round 1",
+            }
+        }
+
+        fresh_engine = GrassrootsEloEngine()
+        expected = fresh_engine.predict_match("A", "B")
+
+        engine = GrassrootsEloEngine()
+        engine.process_matches([match], log_calibration=True)
+
+        with open(log_path, newline="") as f:
+            rows = list(csv.DictReader(f))
+
+        assert len(rows) == 1
+        assert float(rows[0]["p_home_win"]) == pytest.approx(expected["home_win"], abs=1e-4)
+
+
+class TestMatchReplay:
+    def test_same_kickoff_predictions_share_pre_batch_state(self, engine):
+        data = [
+            {
+                "attributes": {
+                    "date": "2025-04-01 15:00:00",
+                    "home_team_name": "A",
+                    "away_team_name": "B",
+                    "home_score": 6,
+                    "away_score": 0,
+                    "status": "played",
+                    "bye_flag": 0,
+                    "full_round": "Round 1",
+                }
+            },
+            {
+                "attributes": {
+                    "date": "2025-04-01 15:00:00",
+                    "home_team_name": "C",
+                    "away_team_name": "D",
+                    "home_score": 0,
+                    "away_score": 0,
+                    "status": "played",
+                    "bye_flag": 0,
+                    "full_round": "Round 1",
+                }
+            },
+        ]
+
+        fresh_engine = GrassrootsEloEngine()
+        expected = fresh_engine.predict_match("C", "D")
+
+        log = engine.replay_matches(data, collect_predictions=True)
+
+        assert len(log) == 2
+        second = log[1]
+        assert second["home_elo_pre"] == pytest.approx(BASE_ELO)
+        assert second["away_elo_pre"] == pytest.approx(BASE_ELO)
+        assert second["draw"] == pytest.approx(expected["draw"], abs=1e-9)
+        assert second["xg_home"] == pytest.approx(expected["xg_home"], abs=1e-9)
+
+    def test_prediction_context_invalidated_after_state_change(self, engine):
+        engine.process_match("A", "B", 2, 0)
+        first_context = engine._get_prediction_context()
+        assert first_context is engine._get_prediction_context()
+
+        engine.process_match("C", "D", 1, 1)
+        second_context = engine._get_prediction_context()
+        assert second_context is not first_context
+
+    def test_prediction_context_invalidated_by_priors_and_reset(self, engine):
+        engine.process_match("A", "B", 2, 0)
+        first_context = engine._get_prediction_context()
+
+        engine.inject_priors({"A": 1600}, quiet=True)
+        second_context = engine._get_prediction_context()
+        assert second_context is not first_context
+
+        engine.reset_played()
+        third_context = engine._get_prediction_context()
+        assert third_context is not second_context
+
+
+class TestMatchRecord:
+    def test_from_csv_row_normalizes_complete_match(self):
+        row = {
+            "season": "2025",
+            "grade": "first_grade",
+            "round": "3",
+            "full_round": "Round 3",
+            "match_date": "2025-04-05 15:00:00",
+            "home_team_id": "Home FC",
+            "away_team_id": "Away FC",
+            "home_goals": "2",
+            "away_goals": "1",
+            "status": "complete",
+        }
+
+        record = MatchRecord.from_csv_row(row)
+        assert record is not None
+        assert record.round_number == 3
+        assert record.home_team == "Home FC"
+
+    def test_normalize_match_records_filters_invalid_api_rows(self):
+        data = [
+            {
+                "attributes": {
+                    "date": "2025-04-01 15:00:00",
+                    "home_team_name": "A",
+                    "away_team_name": "B",
+                    "home_score": 1,
+                    "away_score": 0,
+                    "status": "played",
+                    "bye_flag": 0,
+                }
+            },
+            {
+                "attributes": {
+                    "date": "2025-04-01 15:00:00",
+                    "home_team_name": "C",
+                    "away_team_name": "D",
+                    "home_score": None,
+                    "away_score": None,
+                    "status": "upcoming",
+                    "bye_flag": 0,
+                }
+            },
+        ]
+
+        records, skipped = normalize_match_records(data)
+        assert len(records) == 1
+        assert skipped == 1
+
 
 # ------------------------------------------------------------------ #
 # process_matches (integration)                                        #
@@ -505,6 +650,37 @@ class TestMultiLeague:
     def test_priors_backward_compat(self):
         from config.constants import PRIOR_RATINGS
         assert PRIOR_RATINGS == LEAGUES[DEFAULT_LEAGUE]["priors"]
+
+
+class TestDashboardPriors:
+    def test_build_engine_respects_use_priors_flag(self, tmp_path, monkeypatch):
+        from dashboard.data import PRIORS_PATHS, build_engine
+
+        priors_path = tmp_path / "priors.json"
+        priors_path.write_text(json.dumps({"A": 1600, "Ghost": 1700}))
+        monkeypatch.setitem(PRIORS_PATHS, "prem-men", str(priors_path))
+
+        raw_matches = [{
+            "attributes": {
+                "date": "2025-04-01 15:00:00",
+                "home_team_name": "A",
+                "away_team_name": "B",
+                "home_score": 1,
+                "away_score": 0,
+                "status": "played",
+                "bye_flag": 0,
+                "full_round": "Round 1",
+            }
+        }]
+
+        build_engine.clear()
+        _, _, engine_with_priors = build_engine("prem-men", raw_matches, use_priors=True)
+        assert engine_with_priors.initial_elos["A"] == 1600
+        assert "Ghost" not in engine_with_priors.teams
+
+        build_engine.clear()
+        _, _, engine_without_priors = build_engine("prem-men", raw_matches, use_priors=False)
+        assert "A" not in engine_without_priors.initial_elos
 
 
 # ------------------------------------------------------------------ #

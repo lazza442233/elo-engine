@@ -23,6 +23,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
+from engine.match_record import normalize_match_records
 
 # ---------------------------------------------------------------------------
 # Data loading (same as run_audit.py)
@@ -90,12 +91,8 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
         for i, season in enumerate(train_seasons):
             if season not in matches_by_season:
                 continue
-            for m in matches_by_season[season]:
-                engine.process_match(
-                    m["home_team_id"], m["away_team_id"],
-                    int(m["home_goals"]), int(m["away_goals"]),
-                    round_label=m.get("full_round"),
-                )
+            season_records, _ = normalize_match_records(matches_by_season[season])
+            engine.process_matches(season_records, quiet=True)
             # Between-season regression (not after the last training season — that's before val)
             if i < len(train_seasons) - 1:
                 for team in engine.teams.values():
@@ -127,32 +124,8 @@ def evaluate_config(params: dict, matches_by_season: dict[str, list[dict]]) -> d
         if val_season not in matches_by_season:
             continue
 
-        preds = []
-        for m in matches_by_season[val_season]:
-            home = m["home_team_id"]
-            away = m["away_team_id"]
-            h_goals = int(m["home_goals"])
-            a_goals = int(m["away_goals"])
-
-            pred = engine.predict_match(home, away)
-
-            if h_goals > a_goals:
-                outcome = 1
-            elif h_goals < a_goals:
-                outcome = -1
-            else:
-                outcome = 0
-
-            preds.append({
-                "prob_win": pred["home_win"],
-                "prob_draw": pred["draw"],
-                "prob_loss": pred["away_win"],
-                "outcome": outcome,
-            })
-
-            # Update after prediction (walk-forward)
-            engine.process_match(home, away, h_goals, a_goals,
-                                 round_label=m.get("full_round"))
+        val_records, _ = normalize_match_records(matches_by_season[val_season])
+        preds = engine.replay_matches(val_records, collect_predictions=True, quiet=True)
 
         # Score
         brier = _brier(preds)
@@ -582,12 +555,8 @@ def run_stage3(grade: str):
             for i, season in enumerate(fold["train"]):
                 if season not in matches:
                     continue
-                for m in matches[season]:
-                    engine.process_match(
-                        m["home_team_id"], m["away_team_id"],
-                        int(m["home_goals"]), int(m["away_goals"]),
-                        round_label=m.get("full_round"),
-                    )
+                season_records, _ = normalize_match_records(matches[season])
+                engine.process_matches(season_records, quiet=True)
                 if i < len(fold["train"]) - 1:
                     for team in engine.teams.values():
                         team.elo = BASE_ELO + (team.elo - BASE_ELO) * (1 - regression)
@@ -613,25 +582,15 @@ def run_stage3(grade: str):
 
             if fold["val"] not in matches:
                 continue
-            for m in matches[fold["val"]]:
-                pred = engine.predict_match(m["home_team_id"], m["away_team_id"])
-                h_goals = int(m["home_goals"])
-                a_goals = int(m["away_goals"])
-                if h_goals > a_goals:
-                    o = 1
-                elif h_goals < a_goals:
-                    o = -1
-                else:
-                    o = 0
+            val_records, _ = normalize_match_records(matches[fold["val"]])
+            replay_log = engine.replay_matches(val_records, collect_predictions=True, quiet=True)
+            for entry in replay_log:
+                o = entry["outcome"]
                 oh = 1.0 if o == 1 else 0.0
                 od = 1.0 if o == 0 else 0.0
                 oa = 1.0 if o == -1 else 0.0
-                b = (pred["home_win"] - oh)**2 + (pred["draw"] - od)**2 + (pred["away_win"] - oa)**2
+                b = (entry["home_win"] - oh)**2 + (entry["draw"] - od)**2 + (entry["away_win"] - oa)**2
                 brier_list.append(b)
-                engine.process_match(
-                    m["home_team_id"], m["away_team_id"], h_goals, a_goals,
-                    round_label=m.get("full_round"),
-                )
 
     prod_arr = np.array(all_prod_briers)
     champ_arr = np.array(all_champ_briers)

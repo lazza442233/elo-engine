@@ -11,6 +11,7 @@ from api.client import detect_next_round, fetch_dribl_data
 from config.constants import BASE_ELO, PRIOR_REGRESSION_FACTOR, _build_api_url, fixtures_url
 from config.teams import team_short
 from engine.elo import GrassrootsEloEngine
+from engine.match_record import normalize_match_records
 
 PRIORS_PATHS = {
     "prem-men": "data/end_of_season_elos_first_grade.json",
@@ -41,35 +42,25 @@ def load_fixtures(league_key: str, round_number: int | None):
 def build_engine(league_key: str, _raw_matches: list, use_priors: bool = False):
     """Process matches and return engine plus derived data."""
     engine = GrassrootsEloEngine()
+    match_records, _ = normalize_match_records(_raw_matches)
 
     if use_priors:
         priors_path = PRIORS_PATHS.get(league_key, PRIORS_PATHS["prem-men"])
         try:
             priors = GrassrootsEloEngine.load_priors_from_file(priors_path)
             # Only inject priors for teams in the current season
-            active = _active_teams(_raw_matches)
+            active = {m.home_team for m in match_records} | {m.away_team for m in match_records}
             priors = {k: v for k, v in priors.items() if k in active}
             engine.inject_priors(priors, quiet=True)
         except FileNotFoundError:
             pass
 
-    engine.process_matches(_raw_matches, quiet=True)
+    engine.process_matches(match_records, quiet=True)
 
     history = engine.elo_history
     team_names = sorted(engine.teams.keys())
 
     return history, team_names, engine
-
-
-def _active_teams(raw_matches: list) -> set[str]:
-    """Extract the set of team names present in the current season's data."""
-    names = set()
-    for match in raw_matches:
-        attrs = match["attributes"]
-        names.add(GrassrootsEloEngine._shorten_name(attrs["home_team_name"]))
-        names.add(GrassrootsEloEngine._shorten_name(attrs["away_team_name"]))
-    return names
-
 
 def compute_league_state(engine: GrassrootsEloEngine) -> dict:
     """Derive league table, Elo rankings, and rank map from the engine.

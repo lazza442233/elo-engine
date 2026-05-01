@@ -28,8 +28,9 @@ from display.output import (
     print_rankings,
     print_round_predictions,
 )
-from engine.calibration import compute_brier_score, log_prediction
+from engine.calibration import compute_brier_score
 from engine.elo import GrassrootsEloEngine
+from engine.match_record import normalize_match_records
 from persistence.db import (
     init_db,
     load_matches,
@@ -124,6 +125,7 @@ def main():
     # ------------------------------------------------------------------
     init_db()
     raw_matches = []
+    match_records = []
     raw_fixtures = []
     offline = args.offline
 
@@ -135,10 +137,9 @@ def main():
             if not quiet:
                 print("      ERROR: No cached data. Run online first to populate.")
             return
-        # Convert DB rows into the API-like dicts the engine expects
-        raw_matches = _db_rows_to_api_format(cached)
+        match_records, _ = normalize_match_records(cached)
         if not quiet:
-            print(f"      Loaded {len(raw_matches)} cached result(s).")
+            print(f"      Loaded {len(match_records)} cached result(s).")
         if not quiet:
             print("[2/5] Skipping fixture fetch (offline mode).")
     else:
@@ -146,17 +147,18 @@ def main():
             print("[1/5] Fetching match results from Dribl API...")
         try:
             raw_matches = fetch_dribl_data(api_url)
+            match_records, _ = normalize_match_records(raw_matches)
             if not quiet:
                 print(f"      Retrieved {len(raw_matches)} result(s).")
         except Exception as exc:
             # Fall back to cached data if available
             cached = load_matches(league_key)
             if cached:
-                raw_matches = _db_rows_to_api_format(cached)
+                match_records, _ = normalize_match_records(cached)
                 offline = True
                 if not quiet:
                     print(f"      WARNING: API failed ({exc}). "
-                          f"Falling back to {len(raw_matches)} cached result(s).")
+                          f"Falling back to {len(match_records)} cached result(s).")
             else:
                 if not quiet:
                     print(f"      ERROR: Could not fetch results — {exc}")
@@ -207,13 +209,7 @@ def main():
         try:
             priors = GrassrootsEloEngine.load_priors_from_file(priors_path)
             # Only inject priors for teams in the current season
-            active = {
-                GrassrootsEloEngine._shorten_name(m["attributes"]["home_team_name"])
-                for m in raw_matches
-            } | {
-                GrassrootsEloEngine._shorten_name(m["attributes"]["away_team_name"])
-                for m in raw_matches
-            }
+            active = {m.home_team for m in match_records} | {m.away_team for m in match_records}
             priors = {k: v for k, v in priors.items() if k in active}
             engine.inject_priors(priors, quiet=quiet)
         except FileNotFoundError:
@@ -231,7 +227,7 @@ def main():
     # ------------------------------------------------------------------
     if not quiet:
         print("[4/5] Processing match history...")
-    engine.process_matches(raw_matches, quiet=quiet)
+    engine.process_matches(match_records, quiet=quiet, log_calibration=args.log_results)
     if not quiet:
         print(f"      Processed {engine.processed_matches} match(es) across "
               f"{len(engine.teams)} team(s).")
@@ -239,16 +235,6 @@ def main():
     # Persist to SQLite (skip in offline mode — data already there)
     if not offline:
         _save_to_db(league_key, raw_matches, engine, quiet)
-
-    # ------------------------------------------------------------------
-    # 4b. Log predictions for completed matches (calibration)
-    # ------------------------------------------------------------------
-    if args.log_results:
-        if not quiet:
-            print("      Logging predictions for completed matches...")
-        logged = _log_completed_matches(engine, raw_matches)
-        if not quiet:
-            print(f"      Logged {logged} prediction(s) to calibration CSV.")
 
     # ------------------------------------------------------------------
     # 5. Output
@@ -308,52 +294,6 @@ def _save_to_db(league_key: str, raw_matches: list[dict],
     save_team_ratings(league_key, engine.teams)
     if not quiet and inserted:
         print(f"      Saved {inserted} new match(es) to database.")
-
-
-def _log_completed_matches(engine: GrassrootsEloEngine, raw_matches: list[dict]) -> int:
-    """Generate predictions and log them against actual results for calibration."""
-    SKIP_STATUSES = {"forfeit", "abandoned", "postponed", "upcoming", "bye"}
-    logged = 0
-
-    for match in raw_matches:
-        attrs = match["attributes"]
-        if attrs.get("bye_flag", 0):
-            continue
-        status = attrs.get("status", "").lower()
-        if status in SKIP_STATUSES:
-            continue
-        home_score = attrs.get("home_score")
-        away_score = attrs.get("away_score")
-        if home_score is None or away_score is None:
-            continue
-
-        home = GrassrootsEloEngine._shorten_name(attrs["home_team_name"])
-        away = GrassrootsEloEngine._shorten_name(attrs["away_team_name"])
-
-        prediction = engine.predict_match(home, away)
-        log_prediction(prediction, home, away, int(home_score), int(away_score))
-        logged += 1
-
-    return logged
-
-
-def _db_rows_to_api_format(rows: list[dict]) -> list[dict]:
-    """Convert SQLite match rows into the Dribl API-like dict format
-    that GrassrootsEloEngine.process_matches() expects."""
-    result = []
-    for r in rows:
-        result.append({
-            "attributes": {
-                "date": r["match_date"],
-                "home_team_name": r["home_team"],
-                "away_team_name": r["away_team"],
-                "home_score": r["home_score"],
-                "away_score": r["away_score"],
-                "status": r.get("status", "played"),
-                "bye_flag": 0,
-            }
-        })
-    return result
 
 
 if __name__ == "__main__":

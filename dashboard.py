@@ -37,6 +37,7 @@ st.markdown("""<style>
 # Sidebar
 sidebar_cfg = render_sidebar()
 league_key = sidebar_cfg["league_key"]
+use_priors = sidebar_cfg["use_priors"]
 league_cfg = LEAGUES[league_key]
 
 # Data loading
@@ -50,7 +51,7 @@ except Exception as exc:
 
 # Engine
 history, team_names, engine = build_engine(
-    league_key, raw_matches, use_priors=True,
+    league_key, raw_matches, use_priors=use_priors,
 )
 state = compute_league_state(engine)
 

@@ -15,6 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from engine.elo import GrassrootsEloEngine
+from engine.match_record import normalize_match_records
 from config.constants import BASE_ELO, PRIOR_REGRESSION_FACTOR
 
 
@@ -56,42 +57,8 @@ def run_backtest(matches_by_season: dict[str, list[dict]]) -> dict[str, list[dic
     season_logs: dict[str, list[dict]] = {}
 
     for season, matches in matches_by_season.items():
-        log = []
-        for m in matches:
-            home = m["home_team_id"]
-            away = m["away_team_id"]
-            h_goals = int(m["home_goals"])
-            a_goals = int(m["away_goals"])
-
-            # Predict BEFORE processing
-            pred = engine.predict_match(home, away)
-
-            if h_goals > a_goals:
-                outcome = 1
-            elif h_goals < a_goals:
-                outcome = -1
-            else:
-                outcome = 0
-
-            log.append({
-                "season": season,
-                "round": m["round"],
-                "home": home,
-                "away": away,
-                "prob_win": pred["home_win"],
-                "prob_draw": pred["draw"],
-                "prob_loss": pred["away_win"],
-                "xg_home": pred["xg_home"],
-                "xg_away": pred["xg_away"],
-                "actual_home_goals": h_goals,
-                "actual_away_goals": a_goals,
-                "outcome": outcome,
-                "home_elo_pre": engine._get_or_create(home).elo,
-                "away_elo_pre": engine._get_or_create(away).elo,
-            })
-
-            # Now update
-            engine.process_match(home, away, h_goals, a_goals, round_label=m["full_round"])
+        season_records, _ = normalize_match_records(matches)
+        log = engine.replay_matches(season_records, collect_predictions=True, quiet=True)
 
         season_logs[season] = log
 
@@ -226,12 +193,8 @@ def elo_distribution_per_season(matches_by_season: dict[str, list[dict]]) -> dic
     dist_stats = {}
 
     for season, matches in matches_by_season.items():
-        for m in matches:
-            engine.process_match(
-                m["home_team_id"], m["away_team_id"],
-                int(m["home_goals"]), int(m["away_goals"]),
-                round_label=m["full_round"],
-            )
+        season_records, _ = normalize_match_records(matches)
+        engine.process_matches(season_records, quiet=True)
 
         elos = [t.elo for t in engine.teams.values()]
         dist_stats[season] = {

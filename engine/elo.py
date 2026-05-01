@@ -16,6 +16,7 @@ Design choices:
 import json
 import math
 import statistics
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +44,8 @@ from config.constants import (
     XG_ASYMMETRY_FACTOR,
     XG_BLEND_WEIGHT,
 )
+from engine.calibration import log_prediction
+from engine.match_record import MatchRecord, normalize_match_records, shorten_team_name
 from models.team import Team
 
 
@@ -75,6 +78,9 @@ class GrassrootsEloEngine:
         self.elo_history: list[dict[str, float]] = []  # snapshot after each match
         self.match_log: list[dict] = []  # per-match metadata
         self.initial_elos: dict[str, float] = {}  # starting Elos after priors
+        self._state_version: int = 0
+        self._prediction_context: dict | None = None
+        self._prediction_context_version: int = -1
 
     # ------------------------------------------------------------------ #
     # Helpers                                                              #
@@ -99,29 +105,18 @@ class GrassrootsEloEngine:
     def _get_or_create(self, name: str) -> Team:
         if name not in self.teams:
             self.teams[name] = Team(name)
+            self._invalidate_prediction_context()
         return self.teams[name]
 
     @staticmethod
     def _shorten_name(raw: str) -> str:
-        """
-        Strip the league/grade suffix that Dribl appends to every team name.
-        e.g. 'Kellyville Kolts Soccer Club Premier League Men Reserve Grade'
-             -> 'Kellyville Kolts Soccer Club'
-        """
-        suffixes = [
-            " Premier League Men First Grade",
-            " Premier League Men Reserve Grade",
-            " Premier League First Grade",
-            " Premier League Reserve Grade",
-            " Premier League Men",
-            " Premier League",
-            " First Grade",
-            " Reserve Grade",
-        ]
-        for sfx in suffixes:
-            if raw.endswith(sfx):
-                return raw[: -len(sfx)].strip()
-        return raw.strip()
+        return shorten_team_name(raw)
+
+    def _invalidate_prediction_context(self):
+        """Drop cached derived prediction state after any engine mutation."""
+        self._state_version += 1
+        self._prediction_context = None
+        self._prediction_context_version = -1
 
     # ------------------------------------------------------------------ #
     # Adaptive K-factor                                                    #
@@ -189,6 +184,7 @@ class GrassrootsEloEngine:
             team = self._get_or_create(name)
             team.elo = elo
             self.initial_elos[name] = elo
+        self._invalidate_prediction_context()
         if not quiet:
             print(f"[Priors] Injected {len(priors)} team rating(s).")
 
@@ -200,6 +196,7 @@ class GrassrootsEloEngine:
         """
         for team in self.teams.values():
             team.played = 0
+        self._invalidate_prediction_context()
 
     # ------------------------------------------------------------------ #
     # Process a single match                                               #
@@ -304,61 +301,139 @@ class GrassrootsEloEngine:
             "round": round_label,
             "date": match_date,
         })
+        self._invalidate_prediction_context()
 
     # ------------------------------------------------------------------ #
     # Process full match list from API data                                #
     # ------------------------------------------------------------------ #
 
-    def process_matches(self, raw_data: list[dict], quiet: bool = False):
-        """
-        Ingest the Dribl API 'data' list chronologically.
-        Skips: Forfeit, Abandoned, Postponed, Upcoming, Bye.
-        """
-        SKIP_STATUSES = {"forfeit", "abandoned", "postponed", "upcoming", "bye"}
+    def _group_match_batches(self, matches: list[MatchRecord]) -> list[list[MatchRecord]]:
+        """Group normalized matches by exact kickoff timestamp."""
+        if not matches:
+            return []
 
-        # Sort by date ascending so early rounds update ratings first
-        def parse_date(m):
-            try:
-                return datetime.strptime(
-                    m["attributes"]["date"], "%Y-%m-%d %H:%M:%S"
+        batches: list[list[MatchRecord]] = []
+        current_batch: list[MatchRecord] = [matches[0]]
+        current_kickoff = matches[0].kickoff
+
+        for match in matches[1:]:
+            if match.kickoff == current_kickoff:
+                current_batch.append(match)
+                continue
+
+            batches.append(current_batch)
+            current_batch = [match]
+            current_kickoff = match.kickoff
+
+        batches.append(current_batch)
+        return batches
+
+    def replay_matches(
+        self,
+        raw_data: Iterable[MatchRecord | dict],
+        quiet: bool = False,
+        collect_predictions: bool = False,
+        log_calibration: bool = False,
+    ) -> list[dict]:
+        """Replay normalized matches in kickoff-aware batches."""
+        matches, skipped = normalize_match_records(raw_data)
+        replay_log: list[dict] = []
+
+        for batch in self._group_match_batches(matches):
+            for match in batch:
+                self._get_or_create(match.home_team)
+                self._get_or_create(match.away_team)
+
+            if not collect_predictions and not log_calibration:
+                for match in batch:
+                    self.process_match(
+                        match.home_team,
+                        match.away_team,
+                        match.home_score,
+                        match.away_score,
+                        round_label=match.round_label,
+                        match_date=match.match_date,
+                    )
+                continue
+
+            batch_entries: list[tuple[MatchRecord, dict, dict]] = []
+            for match in batch:
+                home_pre = self.teams[match.home_team].elo
+                away_pre = self.teams[match.away_team].elo
+                prediction = self.predict_match(match.home_team, match.away_team)
+
+                if match.home_score > match.away_score:
+                    outcome = 1
+                elif match.home_score < match.away_score:
+                    outcome = -1
+                else:
+                    outcome = 0
+
+                replay_entry = {
+                    "season": match.season,
+                    "grade": match.grade,
+                    "round": match.round_number if match.round_number is not None else match.round_label,
+                    "round_label": match.round_label,
+                    "home": match.home_team,
+                    "away": match.away_team,
+                    "home_win": prediction["home_win"],
+                    "draw": prediction["draw"],
+                    "away_win": prediction["away_win"],
+                    "prob_win": prediction["home_win"],
+                    "prob_draw": prediction["draw"],
+                    "prob_loss": prediction["away_win"],
+                    "xg_home": prediction["xg_home"],
+                    "xg_away": prediction["xg_away"],
+                    "expected_gd": prediction["expected_gd"],
+                    "actual_home_goals": match.home_score,
+                    "actual_away_goals": match.away_score,
+                    "outcome": outcome,
+                    "home_elo_pre": home_pre,
+                    "away_elo_pre": away_pre,
+                    "date": match.match_date,
+                }
+                batch_entries.append((match, replay_entry, prediction))
+
+                if log_calibration:
+                    log_prediction(
+                        prediction,
+                        match.home_team,
+                        match.away_team,
+                        match.home_score,
+                        match.away_score,
+                    )
+
+            for match, _, _ in batch_entries:
+                self.process_match(
+                    match.home_team,
+                    match.away_team,
+                    match.home_score,
+                    match.away_score,
+                    round_label=match.round_label,
+                    match_date=match.match_date,
                 )
-            except Exception:
-                return datetime.min
 
-        matches = sorted(raw_data, key=parse_date)
-
-        skipped = 0
-        for match in matches:
-            attrs = match["attributes"]
-
-            # Skip byes
-            if attrs.get("bye_flag", 0):
-                skipped += 1
-                continue
-
-            # Skip non-played statuses
-            status = attrs.get("status", "").lower()
-            if status in SKIP_STATUSES:
-                skipped += 1
-                continue
-
-            # Extract and validate scores
-            home_score = attrs.get("home_score")
-            away_score = attrs.get("away_score")
-            if home_score is None or away_score is None:
-                skipped += 1
-                continue
-
-            home_name = self._shorten_name(attrs["home_team_name"])
-            away_name = self._shorten_name(attrs["away_team_name"])
-
-            round_label = attrs.get("full_round")
-            match_date = attrs.get("date")
-            self.process_match(home_name, away_name, int(home_score), int(away_score),
-                               round_label=round_label, match_date=match_date)
+            if collect_predictions:
+                replay_log.extend(entry for _, entry, _ in batch_entries)
 
         if skipped and not quiet:
             print(f"[Ingest] Skipped {skipped} match(es) (bye/forfeit/invalid).")
+
+        return replay_log
+
+    def process_matches(
+        self,
+        raw_data: Iterable[MatchRecord | dict],
+        quiet: bool = False,
+        log_calibration: bool = False,
+    ):
+        """Ingest and replay matches, optionally logging calibration on the fly."""
+        self.replay_matches(
+            raw_data,
+            quiet=quiet,
+            collect_predictions=False,
+            log_calibration=log_calibration,
+        )
 
     # ------------------------------------------------------------------ #
     # Dixon-Coles MLE solver                                               #
@@ -441,6 +516,24 @@ class GrassrootsEloEngine:
         defence = {name: float(np.exp(log_beta[i])) for i, name in enumerate(team_names)}
         return attack, defence
 
+    def _get_prediction_context(self) -> dict:
+        """Return cached derived state used across repeated predictions."""
+        if (
+            self._prediction_context is not None
+            and self._prediction_context_version == self._state_version
+        ):
+            return self._prediction_context
+
+        attack_mults, defence_mults = self._solve_attack_defence()
+        context = {
+            "attack_mults": attack_mults,
+            "defence_mults": defence_mults,
+            "baseline": self.league_median_goals / 2.0,
+        }
+        self._prediction_context = context
+        self._prediction_context_version = self._state_version
+        return context
+
     # ------------------------------------------------------------------ #
     # Bayesian shrinkage                                                   #
     # ------------------------------------------------------------------ #
@@ -507,9 +600,10 @@ class GrassrootsEloEngine:
         expected_gd = elo_diff / ELO_TO_GOAL_RATIO
 
         # ── Step 2: Dixon-Coles multiplicative xG ──
-        attack_mults, defence_mults = self._solve_attack_defence()
-
-        baseline = self.league_median_goals / 2.0
+        context = self._get_prediction_context()
+        attack_mults = context["attack_mults"]
+        defence_mults = context["defence_mults"]
+        baseline = context["baseline"]
 
         # ── Step 3: Elo-derived xG anchor (uses median baseline) ──
         elo_home_xg = baseline + (expected_gd * XG_ASYMMETRY_FACTOR)
