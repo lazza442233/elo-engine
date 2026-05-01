@@ -5,9 +5,10 @@ Runs a full walk-forward backtest across all seasons using the production-locked
 hyperparameters, then computes Brier score, log-loss, calibration, league dynamics,
 and Elo distribution metrics.
 
-Usage:  python run_audit.py
+Usage:  python run_audit.py --grade all
 """
 
+import argparse
 import csv
 import math
 import statistics
@@ -25,14 +26,34 @@ from config.constants import BASE_ELO, PRIOR_REGRESSION_FACTOR
 
 DATA_PATH = Path("data/processed/all_seasons.csv")
 OUTPUT_DIR = Path("backtest_logs")
-GRADE = "first_grade"  # audit focuses on first grade
+GRADE_LABELS = {
+    "first_grade": "First Grade",
+    "reserve_grade": "Reserve Grade",
+}
 
 
-def load_matches() -> list[dict]:
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Elo maintenance audit.")
+    parser.add_argument(
+        "--grade",
+        choices=[*GRADE_LABELS.keys(), "all"],
+        default="all",
+        help="League grade to audit (default: all).",
+    )
+    return parser.parse_args()
+
+
+def resolve_grades(grade: str) -> list[str]:
+    if grade == "all":
+        return list(GRADE_LABELS.keys())
+    return [grade]
+
+
+def load_matches(grade: str) -> list[dict]:
     """Load all_seasons.csv and return list of match dicts, sorted by date."""
     with open(DATA_PATH) as f:
         reader = csv.DictReader(f)
-        rows = [r for r in reader if r["grade"] == GRADE and r["status"] == "complete"]
+        rows = [r for r in reader if r["grade"] == grade and r["status"] == "complete"]
     rows.sort(key=lambda r: r["match_date"])
     return rows
 
@@ -218,9 +239,9 @@ def elo_distribution_per_season(matches_by_season: dict[str, list[dict]]) -> dic
 # 7. Save backtest log
 # ──────────────────────────────────────────────────────────────────────
 
-def save_season_log(log: list[dict], season: str):
+def save_season_log(log: list[dict], season: str, grade: str):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_DIR / f"audit_{season}_log.csv"
+    path = OUTPUT_DIR / f"audit_{grade}_{season}_log.csv"
     fields = [
         "season", "round", "home", "away",
         "home_elo_pre", "away_elo_pre",
@@ -240,18 +261,20 @@ def save_season_log(log: list[dict], season: str):
 # 8. Main audit runner
 # ──────────────────────────────────────────────────────────────────────
 
-def main():
+def run_grade_audit(grade: str):
+    grade_label = GRADE_LABELS[grade]
     print("=" * 72)
     print("  MODEL MAINTENANCE & PERFORMANCE AUDIT")
-    print("  Elo Engine — Walk-Forward Backtest (First Grade)")
+    print(f"  Elo Engine — Walk-Forward Backtest ({grade_label})")
     print("=" * 72)
     print()
 
     # Load & group data
-    all_matches = load_matches()
+    all_matches = load_matches(grade)
+    all_rows = load_all_rows(grade)
     by_season = group_by_season(all_matches)
     seasons = list(by_season.keys())
-    print(f"  Loaded {len(all_matches)} first-grade matches across {len(seasons)} seasons: {', '.join(seasons)}")
+    print(f"  Loaded {len(all_matches)} {grade.replace('_', '-')} matches across {len(seasons)} seasons: {', '.join(seasons)}")
     print()
 
     # ── §2: Data Integrity ─────────────────────────────────────────
@@ -260,7 +283,7 @@ def main():
     print("─" * 72)
     print("  Schema check: ✓ No changes between 2022 and 2025 raw JSON")
     for s, ms in by_season.items():
-        byes_forfeits = len([m for m in load_all_rows() if m["season"] == s and m["grade"] == GRADE and m["status"] != "complete"])
+        byes_forfeits = len([m for m in all_rows if m["season"] == s and m["status"] != "complete"])
         print(f"  {s}: {len(ms)} complete matches (filtered: {byes_forfeits} non-complete)")
     print("  Pipeline status: ✓ Nominal")
     print()
@@ -276,7 +299,7 @@ def main():
 
     # Save logs
     for s, log in season_logs.items():
-        path = save_season_log(log, s)
+        path = save_season_log(log, s, grade)
         print(f"  Saved: {path}")
 
     # §3.2: Metric table
@@ -484,10 +507,21 @@ def main():
     print("=" * 72)
 
 
-def load_all_rows() -> list[dict]:
-    """Load ALL rows from all_seasons.csv (including non-complete)."""
+def load_all_rows(grade: str | None = None) -> list[dict]:
+    """Load all rows from all_seasons.csv, optionally filtered by grade."""
     with open(DATA_PATH) as f:
-        return list(csv.DictReader(f))
+        rows = list(csv.DictReader(f))
+    if grade is None:
+        return rows
+    return [row for row in rows if row["grade"] == grade]
+
+
+def main():
+    args = parse_args()
+    for index, grade in enumerate(resolve_grades(args.grade)):
+        if index:
+            print()
+        run_grade_audit(grade)
 
 
 if __name__ == "__main__":

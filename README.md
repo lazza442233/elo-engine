@@ -79,13 +79,14 @@ python3 main.py --export-ratings          # save end-of-season Elos for next yea
 ### Tests
 
 ```bash
-python3 -m pytest tests/ -v              # 67 tests
+python3 -m pytest tests/ -v              # 77 tests
 ```
 
 ### Model audit
 
 ```bash
-python3 run_audit.py                     # per-season Brier, log-loss, calibration, health verdict
+python3 run_audit.py                     # audits both grades by default
+python3 run_audit.py --grade first_grade # single-grade audit
 ```
 
 ---
@@ -118,10 +119,10 @@ data/
   *.json                Season config & carry-forward priors
 
 persistence/
-  db.py                 SQLite storage for matches and ratings
+  db.py                 SQLite cache for normalized match replay data
 
 tests/
-  test_elo.py           67 unit tests (invariants, calibration, persistence)
+  test_elo.py           77 unit tests (invariants, calibration, persistence)
 ```
 
 ---

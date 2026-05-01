@@ -35,7 +35,6 @@ from persistence.db import (
     init_db,
     load_match_records,
     save_matches,
-    save_team_ratings,
 )
 
 
@@ -232,7 +231,7 @@ def main():
 
     # Persist to SQLite (skip in offline mode — data already there)
     if not offline:
-        _save_to_db(league_key, match_records, engine, quiet)
+        _save_to_db(league_key, match_records, quiet)
 
     # ------------------------------------------------------------------
     # 5. Output
@@ -264,9 +263,8 @@ def main():
         engine.export_elo_history()
 
 
-def _save_to_db(league_key: str, match_records: list[MatchRecord],
-                engine: GrassrootsEloEngine, quiet: bool):
-    """Persist processed matches and team ratings to SQLite."""
+def _save_to_db(league_key: str, match_records: list[MatchRecord], quiet: bool):
+    """Persist processed matches to SQLite for offline replay."""
     rows = []
     for record in match_records:
         if record.match_date is None:
@@ -281,7 +279,6 @@ def _save_to_db(league_key: str, match_records: list[MatchRecord],
             "round_label": record.round_label,
         })
     inserted = save_matches(league_key, rows)
-    save_team_ratings(league_key, engine.teams)
     if not quiet and inserted:
         print(f"      Saved {inserted} new match(es) to database.")
 

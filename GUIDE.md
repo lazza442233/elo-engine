@@ -29,7 +29,7 @@ The dashboard provides an interactive web UI with rankings, predictions for upco
 ### Run the test suite
 
 ```bash
-python3 -m pytest tests/ -v              # 67 tests
+python3 -m pytest tests/ -v              # 77 tests
 ```
 
 ---
@@ -222,6 +222,7 @@ Run a comprehensive performance audit across all historical seasons:
 
 ```bash
 python3 run_audit.py
+python3 run_audit.py --grade reserve_grade
 ```
 
 This produces:
@@ -231,16 +232,16 @@ This produces:
 - End-of-season Elo distribution statistics
 - Automated health assessment and recommendation
 
-Audit logs are saved to `backtest_logs/audit_{year}_log.csv`.
+Audit logs are saved to `backtest_logs/audit_{grade}_{year}_log.csv`.
 
 ---
 
 ## Data pipeline
 
-1. **Ingest**: `ingest_raw_data.py` fetches immutable JSON from Dribl API → `data/raw/`
-2. **Process**: `process_data.py` cleans and unifies into `data/processed/all_seasons.csv`
-3. **Live**: `main.py` / `dashboard.py` fetch current season data directly from the API
-4. **Persist**: Processed matches and ratings are stored in SQLite (`data/elo_engine.db`)
+1. **Historical base**: `data/processed/all_seasons.csv` provides the walk-forward training and audit dataset
+2. **Live**: `main.py` / `dashboard.py` fetch current season data directly from the Dribl API
+3. **Replay**: normalized match records are processed through the shared kickoff-aware replay path
+4. **Persist**: cached completed matches plus replay metadata are stored in SQLite (`data/elo_engine.db`) for offline replay
 
 ---
 

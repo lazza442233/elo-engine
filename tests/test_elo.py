@@ -8,6 +8,7 @@ import csv
 import json
 import math
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -467,6 +468,24 @@ class TestMatchRecord:
         assert record.round_number == 3
         assert record.home_team == "Home FC"
 
+    def test_from_csv_row_accepts_datetime_match_date(self):
+        row = {
+            "season": "2025",
+            "grade": "first_grade",
+            "round": "3",
+            "full_round": "Round 3",
+            "match_date": datetime(2025, 4, 5, 15, 0, 0),
+            "home_team_id": "Home FC",
+            "away_team_id": "Away FC",
+            "home_goals": "2",
+            "away_goals": "1",
+            "status": "complete",
+        }
+
+        record = MatchRecord.from_csv_row(row)
+        assert record is not None
+        assert record.kickoff == datetime(2025, 4, 5, 15, 0, 0)
+
     def test_from_db_row_preserves_round_label(self):
         row = {
             "match_date": "2025-04-05 15:00:00",
@@ -714,8 +733,8 @@ class TestPersistence:
         ).fetchall()}
         conn.close()
         assert "matches" in tables
-        assert "elo_snapshots" in tables
-        assert "team_ratings" in tables
+        assert "elo_snapshots" not in tables
+        assert "team_ratings" not in tables
 
     def test_init_migrates_existing_matches_table(self, tmp_path):
         from persistence.db import init_db
@@ -795,19 +814,6 @@ class TestPersistence:
         save_matches("test-league", matches, db)
         save_matches("test-league", matches, db)  # duplicate
         assert get_match_count("test-league", db) == 1
-
-    def test_save_and_load_team_ratings(self, tmp_path, engine):
-        from persistence.db import init_db, save_team_ratings, load_team_ratings
-        db = tmp_path / "test.db"
-        init_db(db)
-        engine.process_match("Alpha", "Bravo", 2, 0)
-        save_team_ratings("test-league", engine.teams, db)
-
-        loaded = load_team_ratings("test-league", db)
-        assert len(loaded) == 2
-        names = {r["team_name"] for r in loaded}
-        assert "Alpha" in names
-        assert "Bravo" in names
 
     def test_leagues_isolated(self, tmp_path):
         from persistence.db import init_db, save_matches, get_match_count

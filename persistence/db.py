@@ -5,7 +5,6 @@ Stores processed match results and replay metadata so the engine can skip
 re-fetching the full API on subsequent runs without degrading offline replay.
 """
 
-import json
 import sqlite3
 from pathlib import Path
 
@@ -55,26 +54,6 @@ def init_db(db_path: Path = DB_PATH):
             round_label TEXT,
             api_hash    TEXT    NOT NULL,
             UNIQUE(league_key, api_hash)
-        );
-
-        CREATE TABLE IF NOT EXISTS elo_snapshots (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            league_key  TEXT    NOT NULL,
-            match_id    INTEGER NOT NULL REFERENCES matches(id),
-            snapshot    TEXT    NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS team_ratings (
-            league_key  TEXT NOT NULL,
-            team_name   TEXT NOT NULL,
-            elo         REAL NOT NULL,
-            played      INTEGER NOT NULL DEFAULT 0,
-            wins        INTEGER NOT NULL DEFAULT 0,
-            draws       INTEGER NOT NULL DEFAULT 0,
-            losses      INTEGER NOT NULL DEFAULT 0,
-            gf          INTEGER NOT NULL DEFAULT 0,
-            ga          INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (league_key, team_name)
         );
     """)
     _ensure_columns(conn, "matches", _MATCH_TABLE_COLUMNS)
@@ -145,46 +124,6 @@ def load_match_records(league_key: str, db_path: Path = DB_PATH) -> list[MatchRe
     rows = load_matches(league_key, db_path)
     records, _ = normalize_match_records(rows)
     return records
-
-
-def save_elo_snapshot(league_key: str, match_id: int, snapshot: dict[str, float],
-                      db_path: Path = DB_PATH):
-    """Save a single Elo snapshot (team→rating dict) linked to a match."""
-    conn = _connect(db_path)
-    conn.execute(
-        "INSERT INTO elo_snapshots (league_key, match_id, snapshot) VALUES (?, ?, ?)",
-        (league_key, match_id, json.dumps(snapshot)),
-    )
-    conn.commit()
-    conn.close()
-
-
-def save_team_ratings(league_key: str, teams: dict, db_path: Path = DB_PATH):
-    """Upsert current team ratings (for quick resume without reprocessing)."""
-    conn = _connect(db_path)
-    for name, team in teams.items():
-        conn.execute(
-            """INSERT INTO team_ratings (league_key, team_name, elo, played, wins, draws, losses, gf, ga)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(league_key, team_name) DO UPDATE SET
-                   elo=excluded.elo, played=excluded.played, wins=excluded.wins,
-                   draws=excluded.draws, losses=excluded.losses, gf=excluded.gf, ga=excluded.ga""",
-            (league_key, name, team.elo, team.played, team.wins, team.draws,
-             team.losses, team.gf, team.ga),
-        )
-    conn.commit()
-    conn.close()
-
-
-def load_team_ratings(league_key: str, db_path: Path = DB_PATH) -> list[dict]:
-    """Load saved team ratings for a league."""
-    conn = _connect(db_path)
-    rows = conn.execute(
-        "SELECT * FROM team_ratings WHERE league_key = ? ORDER BY elo DESC",
-        (league_key,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
 
 
 def get_match_count(league_key: str, db_path: Path = DB_PATH) -> int:

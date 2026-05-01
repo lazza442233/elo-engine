@@ -33,6 +33,7 @@ from pathlib import Path
 
 from config.constants import BASE_ELO, PRIOR_REGRESSION_FACTOR
 from engine.elo import GrassrootsEloEngine
+from engine.match_record import normalize_match_records
 
 # ──────────────────────────────────────────────────────────────────────
 # Configuration
@@ -98,12 +99,8 @@ def run_walk_forward(by_season: dict[str, list[dict]]) -> tuple[dict, list[dict]
     season_top2: list[dict] = []
 
     for i, season in enumerate(seasons):
-        for m in by_season[season]:
-            engine.process_match(
-                m["home_team_id"], m["away_team_id"],
-                int(m["home_goals"]), int(m["away_goals"]),
-                round_label=m["full_round"],
-            )
+        season_records, _ = normalize_match_records(by_season[season])
+        engine.replay_matches(season_records, quiet=True)
 
         # Capture standings at end of this season (raw, pre-regression)
         standings = engine.standings()
@@ -172,7 +169,7 @@ def generate_priors(
     raw_elos: dict[str, float],
     season_top2: list[dict],
     teams_in_2025: set[str],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], list[str], dict[str, float]]:
     """Generate the final priors dict for a grade."""
     anchors = compute_anchors(season_top2)
     priors: dict[str, float] = {}

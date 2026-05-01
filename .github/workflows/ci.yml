@@ -21,3 +21,6 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
+
+      - name: Run dual-grade audit
+        run: python run_audit.py --grade all

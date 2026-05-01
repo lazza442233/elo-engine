@@ -81,6 +81,55 @@ def compute_league_state(engine: GrassrootsEloEngine) -> dict:
     }
 
 
+def _append_history_rows(
+    rows: list[dict],
+    match_log: list[dict],
+    snapshots: list[dict[str, float]],
+    pre_season_snapshot: dict[str, float],
+    season: str,
+):
+    """Convert replayed match logs plus Elo snapshots into chart rows."""
+    previous_snapshot = dict(pre_season_snapshot)
+
+    for match_entry, snapshot in zip(match_log, snapshots):
+        dt = pd.to_datetime(match_entry["date"])
+        home = match_entry["home"]
+        away = match_entry["away"]
+        home_score = match_entry["home_score"]
+        away_score = match_entry["away_score"]
+
+        h_before = previous_snapshot.get(home, float(BASE_ELO))
+        a_before = previous_snapshot.get(away, float(BASE_ELO))
+        h_after = snapshot.get(home, float(BASE_ELO))
+        a_after = snapshot.get(away, float(BASE_ELO))
+        h_delta = h_after - h_before
+        a_delta = a_after - a_before
+
+        h_res = "W" if home_score > away_score else ("D" if home_score == away_score else "L")
+        a_res = "W" if away_score > home_score else ("D" if home_score == away_score else "L")
+        h_sign = "+" if h_delta > 0 else ""
+        a_sign = "+" if a_delta > 0 else ""
+
+        rows.append({
+            "Date": dt,
+            "Team": home,
+            "Elo": round(h_after, 1),
+            "Context": f"{h_res} {home_score}\u2013{away_score} vs {team_short(away)} ({h_sign}{h_delta:.0f})",
+            "EloDelta": round(h_delta, 1),
+            "Season": season,
+        })
+        rows.append({
+            "Date": dt,
+            "Team": away,
+            "Elo": round(a_after, 1),
+            "Context": f"{a_res} {away_score}\u2013{home_score} vs {team_short(home)} ({a_sign}{a_delta:.0f})",
+            "EloDelta": round(a_delta, 1),
+            "Season": season,
+        })
+
+        previous_snapshot = snapshot
+
+
 # ---------------------------------------------------------------------------
 # Historical full-history builder
 # ---------------------------------------------------------------------------
@@ -171,49 +220,18 @@ def build_full_history(grade: str) -> pd.DataFrame:
                     "Season": season,
                 })
 
-        # Process matches and record per-team rows
-        for _, m in season_matches.iterrows():
-            home = m["home_team_id"]
-            away = m["away_team_id"]
-            h_goals = int(m["home_goals"])
-            a_goals = int(m["away_goals"])
-            dt = m["match_date"]
-
-            h_before = engine.teams[home].elo if home in engine.teams else float(BASE_ELO)
-            a_before = engine.teams[away].elo if away in engine.teams else float(BASE_ELO)
-
-            engine.process_match(
-                home, away, h_goals, a_goals,
-                round_label=m["full_round"],
-                match_date=str(dt),
-            )
-
-            h_after = engine.teams[home].elo
-            a_after = engine.teams[away].elo
-            h_delta = h_after - h_before
-            a_delta = a_after - a_before
-
-            h_res = "W" if h_goals > a_goals else ("D" if h_goals == a_goals else "L")
-            a_res = "W" if a_goals > h_goals else ("D" if h_goals == a_goals else "L")
-            h_sign = "+" if h_delta > 0 else ""
-            a_sign = "+" if a_delta > 0 else ""
-
-            rows.append({
-                "Date": dt,
-                "Team": home,
-                "Elo": round(h_after, 1),
-                "Context": f"{h_res} {h_goals}\u2013{a_goals} vs {team_short(away)} ({h_sign}{h_delta:.0f})",
-                "EloDelta": round(h_delta, 1),
-                "Season": season,
-            })
-            rows.append({
-                "Date": dt,
-                "Team": away,
-                "Elo": round(a_after, 1),
-                "Context": f"{a_res} {a_goals}\u2013{h_goals} vs {team_short(home)} ({a_sign}{a_delta:.0f})",
-                "EloDelta": round(a_delta, 1),
-                "Season": season,
-            })
+        season_records, _ = normalize_match_records(season_matches.to_dict("records"))
+        pre_season_snapshot = {name: team.elo for name, team in engine.teams.items()}
+        history_start = len(engine.elo_history)
+        log_start = len(engine.match_log)
+        engine.replay_matches(season_records, quiet=True)
+        _append_history_rows(
+            rows,
+            engine.match_log[log_start:],
+            engine.elo_history[history_start:],
+            pre_season_snapshot,
+            season,
+        )
 
         prev_season_teams = season_teams
 

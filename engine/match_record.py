@@ -32,10 +32,13 @@ def shorten_team_name(raw: str) -> str:
     return raw.strip()
 
 
-def parse_match_datetime(raw: str | None) -> datetime:
+def parse_match_datetime(raw: str | datetime | None) -> datetime:
     """Parse a match date string, falling back safely when absent."""
     if not raw:
         return datetime.min
+
+    if isinstance(raw, datetime):
+        return raw
 
     for fmt in _DATE_FORMATS:
         try:
